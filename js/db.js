@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.16 (Cache Busting)
+ * Build Version: v0.7.17 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.16';
+const APP_BUILD_VERSION = 'v0.7.17';
 
 class PEADatabase {
     constructor() {
@@ -144,6 +144,48 @@ class PEADatabase {
         } else {
             localStorage.removeItem('pea_alert_emails');
         }
+    }
+
+    getMechanicEmail() {
+        return localStorage.getItem('pea_alert_email_mechanic') || '';
+    }
+
+    setMechanicEmail(email) {
+        if (email) {
+            localStorage.setItem('pea_alert_email_mechanic', email.trim());
+        } else {
+            localStorage.removeItem('pea_alert_email_mechanic');
+        }
+    }
+
+    getChiefEmail() {
+        return localStorage.getItem('pea_alert_email_chief') || '';
+    }
+
+    setChiefEmail(email) {
+        if (email) {
+            localStorage.setItem('pea_alert_email_chief', email.trim());
+        } else {
+            localStorage.removeItem('pea_alert_email_chief');
+        }
+    }
+
+    getAlertRecipients() {
+        const emails = [];
+        const mechanic = this.getMechanicEmail();
+        const chief = this.getChiefEmail();
+        if (mechanic) emails.push(mechanic);
+        if (chief) emails.push(chief);
+        if (emails.length === 0) {
+            const legacy = this.getAlertEmails();
+            if (legacy) {
+                legacy.split(',').forEach(e => {
+                    const trimmed = e.trim();
+                    if (trimmed) emails.push(trimmed);
+                });
+            }
+        }
+        return [...new Set(emails.map(e => e.toLowerCase()))];
     }
 
     getVehicles() {

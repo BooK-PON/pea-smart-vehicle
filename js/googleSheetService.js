@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.16
+ * Build Version: v0.7.17
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -170,12 +170,13 @@ var hasJsonCol = ensureJsonColumn(ss, "ข้อมูลยานพาหน�
       ]);
     }
     
-    else if (action === "SEND_EMAIL") {
+else if (action === "SEND_EMAIL") {
       if (!payload.emails || !payload.subject || !payload.body) {
         throw new Error("Missing emails, subject, or body");
       }
+      var toList = Array.isArray(payload.emails) ? payload.emails : String(payload.emails).split(',').map(function(e) { return e.trim(); });
       MailApp.sendEmail({
-        to: payload.emails,
+        to: toList,
         subject: payload.subject,
         htmlBody: payload.body
       });
@@ -565,7 +566,7 @@ class PEAGoogleSheetService {
         if (!snapshot.success) {
             return {
                 success: false,
-                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.16 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
+                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.17 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
                 sent: true,
                 detail: snapshot
             };
@@ -603,11 +604,15 @@ class PEAGoogleSheetService {
     }
 
     // ฟังก์ชันส่งอีเมลแจ้งเตือน (ผ่าน Google Apps Script)
-    async sendEmailAlert(emails, subject, body) {
+async sendEmailAlert(emails, subject, body) {
         if (!this.isConnected()) return { success: false, message: 'Google Sheet URL not configured' };
-        if (!emails) return { success: false, message: 'No alert emails configured' };
+        let emailList = [];
+        if (Array.isArray(emails)) emailList = emails;
+        else if (typeof emails === 'string') emailList = emails.split(',').map(e => e.trim());
+        emailList = emailList.filter(e => e);
+        if (emailList.length === 0) return { success: false, message: 'No alert emails configured' };
 
-        return this.sendToGoogleSheet("SEND_EMAIL", { emails: emails, subject: subject, body: body });
+        return this.sendToGoogleSheet("SEND_EMAIL", { emails: emailList, subject: subject, body: body });
     }
 
     // ฟังก์ชันดาวน์โหลดข้อมูลสำรองเป็น CSV เพื่อนำเข้า Google Sheets หรือ Excel
@@ -699,7 +704,7 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     return {
                         success: false,
                         reason: 'OLD_SCRIPT',
-                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.16 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
+                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.17 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
                     };
                 }
                 return { success: false, reason: 'BAD_RESPONSE', payload, message: 'GAS ตอบกลับรูปแบบที่ไม่รู้จัก' };

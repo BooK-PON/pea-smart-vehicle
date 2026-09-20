@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.16
+ * Build Version: v0.7.17
  */
 
 class PEASmartVehicleApp {
@@ -30,6 +30,7 @@ class PEASmartVehicleApp {
         try { this.renderActiveTripsTab(); } catch(e) { console.error('[PEA] Active trips error:', e); }
 try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error:', e); }
         try { this.autoLoadFromGoogleSheetIfNewDay(); } catch(e) { console.error('[PEA] Auto GSheet load error:', e); }
+        try { this.checkFleetAlerts(); } catch(e) { console.error('[PEA] Fleet email alert scan error:', e); }
 
         console.log(`[PEA Smart Vehicle] Initialized version ${APP_BUILD_VERSION}`);
     }
@@ -2202,7 +2203,7 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                             </div>
                         </div>
 
-                                                <!-- Step 4: Email Alert Setup -->
+<!-- Step 4: Email Alert Setup -->
                         <div class="pea-glass p-4 rounded-xl border border-rose-500/30 space-y-2">
                             <div class="flex items-center justify-between">
                                 <label class="font-bold text-rose-400 flex items-center gap-2">
@@ -2211,15 +2212,27 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                                 </label>
                                 <span class="text-[10px] text-slate-400">ระบบจะส่งอีเมลอัตโนมัติเมื่อถึงกำหนด</span>
                             </div>
-                            <div class="flex gap-2">
-                                <input type="text" id="alert-emails-input" value="${(typeof db !== 'undefined' && db.getAlertEmails) ? db.getAlertEmails() : ''}" placeholder="ระบุอีเมล (หากมีหลายคนคั่นด้วยเครื่องหมาย , )" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400 font-mono">
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-rose-300 font-bold shrink-0 w-24">หัวหน้างาน:</span>
+                                    <input type="text" id="alert-chief-input" value="${(typeof db !== 'undefined' && db.getChiefEmail) ? db.getChiefEmail() : ''}" placeholder="e.g. หัวหน้า@pea.co.th (ตอนทดสอบ = pon60562@gmail.com)" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400 font-mono">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-rose-300 font-bold shrink-0 w-24">ช่างเครื่องยนต์:</span>
+                                    <input type="text" id="alert-mechanic-input" value="${(typeof db !== 'undefined' && db.getMechanicEmail) ? db.getMechanicEmail() : ''}" placeholder="e.g. ช่าง@pea.co.th (ตอนทดสอบ = pon60562@gmail.com)" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400 font-mono">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 pt-1">
                                 <button onclick="app.saveAlertEmails()" class="bg-rose-700 hover:bg-rose-600 px-4 py-2 rounded-lg font-bold text-white flex items-center gap-1 shadow transition">
                                     <i class="fa-solid fa-envelope"></i> บันทึกอีเมล
                                 </button>
+                                <button onclick="app.sendTestAlertEmail()" class="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg font-bold text-white flex items-center gap-1 shadow transition text-[11px]">
+                                    <i class="fa-solid fa-paper-plane"></i> ส่งอีเมลทดสอบ
+                                </button>
                             </div>
                             <div class="text-[10px] text-slate-400 pt-1 leading-relaxed">
-                                * ส่งแจ้งเตือนเมื่อรถถึง <b>รอบ PM พอดี</b> และ <b>ภาษีใกล้หมดอายุล่วงหน้า 7 วัน</b> 
-                                (ระบบจะส่งอีเมลอัตโนมัติจากบัญชี Google ของคุณทันทีที่มีการ "บันทึกขากลับ")
+                                * ส่งแจ้งเตือนเฉพาะ <b>2 อีเมลนี้เท่านั้น</b> (ช่างเครื่องยนต์ + หัวหน้างาน) เมื่อรถถึง <b>รอบ PM (ระยะวิ่งตั้งแต่ PM รอบก่อน ≥ 10,000 กม.)</b> และ <b>ภาษีใกล้หมดอายุล่วงหน้า 7 วัน</b>
+                                * ระบบสแกนทั้งกองยานตอนเปิดโปรแกรม + ทุกครั้งที่ "บันทึกขากลับ" และจะส่งซ้ำอีกครั้งทุกวันตราบใดที่ยังไม่แก้ไข (กันสแปมด้วยการส่งวันละครั้ง)
                             </div>
                         </div>
 
@@ -3387,34 +3400,71 @@ exportGoogleSheetCSV() {
     }
 
 
-    saveAlertEmails() {
-        const input = document.getElementById('alert-emails-input');
-        if (!input) return;
-        const emails = input.value.trim();
-        if (typeof db !== 'undefined') {
-            db.setAlertEmails(emails);
-            notifier.showToast('บันทึกอีเมลสำเร็จ', emails ? 'ตั้งค่าการแจ้งเตือนสำเร็จ' : 'ล้างการตั้งค่าอีเมลแล้ว', 'SUCCESS');
+saveAlertEmails() {
+        if (typeof db === 'undefined') return;
+        const chiefInput = document.getElementById('alert-chief-input');
+        const mechanicInput = document.getElementById('alert-mechanic-input');
+        const chief = chiefInput ? chiefInput.value.trim() : '';
+        const mechanic = mechanicInput ? mechanicInput.value.trim() : '';
+        db.setChiefEmail(chief);
+        db.setMechanicEmail(mechanic);
+        const summary = `หัวหน้างาน: ${chief || '—'}`;
+        notifier.showToast('บันทึกอีเมลสำเร็จ', `${summary} / ช่างเครื่องยนต์: ${mechanic || '—'}`, 'SUCCESS');
+    }
+
+    // ฟังก์ชันส่งอีเมลทดสอบ (เพื่อตรวจว่าปลอดภัยและเข้า Gmail กล่องข้อความหลัก)
+    sendTestAlertEmail() {
+        if (typeof googleSheet === 'undefined' || typeof db === 'undefined') return;
+        const recipients = db.getAlertRecipients();
+        if (recipients.length === 0) {
+            notifier.showToast('ยังไม่ได้ตั้งอีเมลผู้รับ', 'กรุณากรอกอีเมลหัวหน้างานและช่างเครื่องยนต์ แล้วกด "บันทึกอีเมล" ก่อน', 'WARNING');
+            return;
         }
+        const now = new Date().toLocaleString('th-TH');
+        const subject = '[PEA Fleet Alert] การแจ้งเตือนอัตโนมัติพร้อมใช้งาน (ทดสอบ)';
+        const body = `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                <div style="background-color: #581c87; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h2 style="color: #fcd34d; margin: 0;">ระบบจัดการยานพาหนะ กฟภ. (PEA Fleet)</h2>
+                </div>
+                <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                    <p style="font-size:16px;">อีเมลทดสอบการแจ้งเตือน</p>
+                    <p style="font-size:14px;">ระบบพร้อมส่งการแจ้งเตือน <strong>ระยะวิ่งเกิน 10,000 กม. (รอบ PM)</strong> และ <strong>ภาษีใกล้หมดอายุภายใน 7 วัน</strong> ไปยังช่างเครื่องยนต์และหัวหน้างานแล้ว</p>
+                    <p style="font-size:12px; color:#6b7280;">เวลาทดสอบ: ${now}</p>
+                    <p style="font-size:12px; color:#6b7280; margin-top:30px; border-top:1px solid #e5e7eb; padding-top:15px;">
+                        อีเมลฉบับนี้ถูกส่งอัตโนมัติจากระบบ PEA Smart Vehicle Application
+                    </p>
+                </div>
+            </div>
+        `;
+        googleSheet.sendEmailAlert(recipients, subject, body).then(res => {
+            if (res && res.success) {
+                console.log('[Email Alert] Test email sent to', recipients);
+                notifier.showToast('ส่งอีเมลทดสอบสำเร็จ', `ส่งไปยัง: ${recipients.join(', ')}`, 'SUCCESS');
+            } else {
+                console.warn('[Email Alert] Test failed', res);
+                notifier.showToast('ส่งอีเมลทดสอบล้มเหลว', 'ตรวจสอบการ Deploy Apps Script (ต้องมีสิทธิ์ MailApp)', 'WARNING');
+            }
+        }).catch(e => {
+            console.warn('[Email Alert] Test error', e);
+            notifier.showToast('เชื่อมต่ออีเมลขัดข้อง', 'ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ URL', 'ERROR');
+        });
     }
 
     // =========================================================================
     // Email Alerts: Preventive Maintenance & Tax Expiry
     // =========================================================================
-    checkMaintenanceAlerts(vehicle) {
-        if (!vehicle || typeof db === 'undefined' || typeof googleSheet === 'undefined') return;
-        const emails = db.getAlertEmails();
-        if (!emails) return; // หากไม่มีอีเมล จะไม่แจ้งเตือน
-
+    _buildVehicleAlerts(vehicle) {
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         let alertsHTML = "";
         let alertsCount = 0;
 
-        // 1. เช็ก PM (วิ่งครบ 10,000 กม.)
+        // 1. เช็ก PM (ระยะวิ่งตั้งแต่ PM รอบก่อน >= 10,000 กม.)
         const lastPmMileage = vehicle.lastPmMileage || 0;
         const distanceSinceLastPM = vehicle.mileage - lastPmMileage;
-        
+
         if (distanceSinceLastPM >= 10000) {
-            // ผูก lock กับระยะไมล์ล่าสุด เพื่อให้เตือนซ้ำได้ถ้ารถวิ่งต่อและยังไม่ได้เข้าศูนย์เปลี่ยน lastPmMileage
+            // ผูก lock กับระยะไมล์ล่าสุด + วัน เพื่อให้เตือนซ้ำวันละครั้งถ้ายังไม่เข้าศูนย์เปลี่ยน lastPmMileage
             const alertKey = `pea_alert_pm_${vehicle.id}_${vehicle.mileage}_${today}`;
             const lastAlert = localStorage.getItem(alertKey);
             if (lastAlert !== "sent") {
@@ -3431,7 +3481,7 @@ exportGoogleSheetCSV() {
             }
         }
 
-        // 2. เช็กภาษี (เหลือ <= 7 วัน)
+        // 2. เช็กภาษี (เหลือ <= 7 วัน รวมขาดแล้ว)
         const taxThresholdDays = 7;
         if (vehicle.taxExpiry) {
             const taxDate = new Date(vehicle.taxExpiry);
@@ -3441,7 +3491,7 @@ exportGoogleSheetCSV() {
             taxDate.setHours(0,0,0,0);
             const diffTime = taxDate - now;
             const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-            
+
             if (diffDays <= taxThresholdDays) {
                 // ผูก lock แบบรายวัน
                 const alertKey = `pea_alert_tax_${vehicle.id}_${today}`;
@@ -3463,36 +3513,76 @@ exportGoogleSheetCSV() {
             }
         }
 
-        // ส่งแจ้งเตือนถ้ามี
-        if (alertsCount > 0) {
-            const subject = `[PEA Fleet Alert] แจ้งเตือนรถยนต์ทะเบียน ${vehicle.plate}`;
-            const body = `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-                    <div style="background-color: #581c87; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                        <h2 style="color: #fcd34d; margin: 0;">ระบบจัดการยานพาหนะ กฟภ. (PEA Fleet)</h2>
-                    </div>
-                    <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-                        <p style="font-size:16px;">เรียน ทีมงานยานพาหนะ,</p>
-                        <p style="font-size:14px; margin-bottom: 20px;">มีรายการแจ้งเตือนสำหรับรถยนต์ <strong>${vehicle.plate} (${vehicle.model})</strong> ดังนี้:</p>
-                        ${alertsHTML}
-                        <p style="font-size:12px; color:#6b7280; margin-top:30px; border-top:1px solid #e5e7eb; padding-top:15px;">
-                            อีเมลฉบับนี้ถูกส่งอัตโนมัติจากระบบ PEA Smart Vehicle Application
-                        </p>
-                    </div>
+        return { html: alertsHTML, count: alertsCount };
+    }
+
+    _composeAlertEmail(vehicleLabel, alertsHTML) {
+        return `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                <div style="background-color: #581c87; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h2 style="color: #fcd34d; margin: 0;">ระบบจัดการยานพาหนะ กฟภ. (PEA Fleet)</h2>
                 </div>
-            `;
-            googleSheet.sendEmailAlert(emails, subject, body).then(res => {
-                if (res && res.success) {
-                    console.log(`[Email Alert] Sent alerts for ${vehicle.plate}`);
-                    notifier.showToast('แจ้งเตือนอัตโนมัติสำเร็จ', 'ส่งอีเมลแจ้งเตือนไปยังผู้ดูแลระบบเรียบร้อย', 'SUCCESS');
-                } else {
-                    console.warn('[Email Alert] Failed to send', res);
-                    notifier.showToast('การส่งอีเมลล้มเหลว', 'อาจเกิดจากสิทธิ์การเข้าถึง Google Apps Script โปรดตรวจสอบการ Deploy', 'WARNING');
-                }
-            }).catch(e => {
-                console.warn('[Email Alert] Error', e);
-                notifier.showToast('เชื่อมต่ออีเมลขัดข้อง', 'โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ URL', 'ERROR');
-            });
+                <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                    <p style="font-size:16px;">เรียน ช่างเครื่องยนต์และหัวหน้างาน,</p>
+                    <p style="font-size:14px; margin-bottom: 20px;">มีรายการแจ้งเตือนสำหรับรถยนต์ <strong>${vehicleLabel}</strong> ดังนี้:</p>
+                    ${alertsHTML}
+                    <p style="font-size:12px; color:#6b7280; margin-top:30px; border-top:1px solid #e5e7eb; padding-top:15px;">
+                        อีเมลฉบับนี้ถูกส่งอัตโนมัติจากระบบ PEA Smart Vehicle Application
+                    </p>
+                </div>
+            </div>
+        `;
+    }
+
+    _sendAlertEmail(subject, body) {
+        if (typeof googleSheet === 'undefined' || typeof db === 'undefined') return;
+        const recipients = db.getAlertRecipients();
+        if (recipients.length === 0) return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
+
+        googleSheet.sendEmailAlert(recipients, subject, body).then(res => {
+            if (res && res.success) {
+                console.log(`[Email Alert] Sent to ${recipients.join(', ')}`);
+                notifier.showToast('แจ้งเตือนอัตโนมัติสำเร็จ', `ส่งอีเมลไปยังช่างเครื่องยนต์และหัวหน้างานแล้ว (${recipients.length} คน)`, 'SUCCESS');
+            } else {
+                console.warn('[Email Alert] Failed to send', res);
+                notifier.showToast('การส่งอีเมลล้มเหลว', 'อาจเกิดจากสิทธิ์การเข้าถึง Google Apps Script โปรดตรวจสอบการ Deploy', 'WARNING');
+            }
+        }).catch(e => {
+            console.warn('[Email Alert] Error', e);
+            notifier.showToast('เชื่อมต่ออีเมลขัดข้อง', 'โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ URL', 'ERROR');
+        });
+    }
+
+    // เช็กครั้งเดียวสำหรับรถคันที่เพิ่ง "บันทึกขากลับ"
+    checkMaintenanceAlerts(vehicle) {
+        if (!vehicle || typeof db === 'undefined' || typeof googleSheet === 'undefined') return;
+        const res = this._buildVehicleAlerts(vehicle);
+        if (res.count > 0) {
+            const subject = `[PEA Fleet Alert] แจ้งเตือนรถยนต์ทะเบียน ${vehicle.plate}`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.html));
+        }
+    }
+
+    // สแกนทั้งกองยาน (เรียกตอนเปิดโปรแกรม) ส่งเป็นสรุปเดียวถ้ามีคันใดถึงกำหนด
+    checkFleetAlerts() {
+        if (typeof db === 'undefined' || typeof googleSheet === 'undefined') return;
+        const vehicles = db.getVehicles();
+        let combinedHTML = "";
+        let totalCount = 0;
+        const flaggedCars = [];
+
+        vehicles.forEach(v => {
+            const res = this._buildVehicleAlerts(v);
+            if (res.count > 0) {
+                combinedHTML += res.html;
+                totalCount += res.count;
+                flaggedCars.push(`${v.plate}${v.model ? ' (' + v.model + ')' : ''}`);
+            }
+        });
+
+        if (totalCount > 0) {
+            const subject = `[PEA Fleet Alert] พบ ${flaggedCars.length} คัน ถึงกำหนด PM/ภาษี ภายใน 7 วัน`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(flaggedCars.join(', '), combinedHTML));
         }
     }
 }
