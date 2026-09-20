@@ -1,0 +1,271 @@
+﻿@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Sarabun:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+
+:root {
+    --pea-purple-primary: #581c87;
+    --pea-purple-dark: #3b0764;
+    --pea-purple-light: #7e22ce;
+    --pea-purple-accent: #a855f7;
+    --pea-gold: #f59e0b;
+    --pea-gold-light: #fbbf24;
+    --safety-orange: #ff6600;
+    --safety-orange-hover: #ff771a;
+    --safety-orange-dark: #d95300;
+}
+
+* {
+    box-sizing: border-box;
+    font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+    background-color: #0b0f19;
+    color: #f1f5f9;
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* Glassmorphism Cards */
+.pea-glass {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pea-card-glow {
+    box-shadow: 0 10px 30px -10px rgba(126, 34, 206, 0.25);
+}
+
+.pea-gold-glow {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+/* ==========================================================================
+   SAFETY ORANGE THEME OVERRIDES (ข้อ 3 ของผู้ใช้)
+   ปรับปุ่มรองและ Outline ทั้งหมดเป็น สีส้มสดเข้ม พร้อมตัวหนังสือและไอคอนข้างในเป็น สีดำสนิท
+   ========================================================================== */
+.btn-safety-orange,
+.btn-safety-orange-outline,
+.pea-btn-secondary,
+button.btn-pea-secondary,
+a.btn-pea-secondary {
+    background-color: var(--safety-orange) !important;
+    color: #000000 !important;
+    font-weight: 700 !important;
+    border: 1.5px solid var(--safety-orange-dark) !important;
+    text-shadow: none !important;
+    box-shadow: 0 2px 6px rgba(255, 102, 0, 0.35);
+    transition: all 0.15s ease-in-out;
+}
+
+.btn-safety-orange i,
+.btn-safety-orange-outline i,
+.pea-btn-secondary i,
+button.btn-pea-secondary i,
+a.btn-pea-secondary i {
+    color: #000000 !important;
+}
+
+.btn-safety-orange:hover,
+.pea-btn-secondary:hover,
+button.btn-pea-secondary:hover {
+    background-color: var(--safety-orange-hover) !important;
+    color: #000000 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 102, 0, 0.5);
+}
+
+.btn-safety-orange:active,
+.pea-btn-secondary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(255, 102, 0, 0.3);
+}
+
+/* Safety Orange Badge */
+.badge-safety-orange {
+    background-color: #ff6600 !important;
+    color: #000000 !important;
+    font-weight: 800 !important;
+    border: 1px solid #d95300 !important;
+}
+
+/* High Contrast Placeholders (ข้อ 3) */
+::placeholder {
+    color: #cbd5e1 !important; /* Slate 300 - High Contrast */
+    opacity: 0.95 !important;
+    font-weight: 400;
+}
+:-ms-input-placeholder {
+    color: #cbd5e1 !important;
+}
+::-ms-input-placeholder {
+    color: #cbd5e1 !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE HEADER (< 1150px) (ข้อ 3 ของผู้ใช้)
+   ซ่อนป้ายข้อความบนปุ่มแถบหัวเรื่องอัตโนมัติ เหลือเพียงไอคอน
+   ========================================================================== */
+@media (max-width: 1150px) {
+    .header-btn-label,
+    .responsive-header-label {
+        display: none !important;
+    }
+    .responsive-header-btn {
+        padding-left: 0.65rem !important;
+        padding-right: 0.65rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .nav-tab-label-mobile-hide {
+        display: none !important;
+    }
+}
+
+/* ==========================================================================
+   SUNLIGHT MODE (Outdoor High Contrast Theme)
+   ========================================================================== */
+body.sunlight-mode {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+}
+
+body.sunlight-mode .pea-glass {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08) !important;
+    color: #0f172a !important;
+}
+
+body.sunlight-mode .bg-slate-900\/80,
+body.sunlight-mode .bg-slate-900,
+body.sunlight-mode .bg-slate-950,
+body.sunlight-mode .bg-\[\#0b0f19\],
+body.sunlight-mode .bg-\[\#0d1424\] {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+}
+
+body.sunlight-mode .bg-slate-800,
+body.sunlight-mode .bg-slate-800\/60 {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+}
+
+body.sunlight-mode .text-slate-100,
+body.sunlight-mode .text-slate-200,
+body.sunlight-mode .text-white {
+    color: #0f172a !important;
+}
+
+body.sunlight-mode .text-slate-400,
+body.sunlight-mode .text-slate-300 {
+    color: #334155 !important;
+}
+
+body.sunlight-mode input,
+body.sunlight-mode select,
+body.sunlight-mode textarea {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    border-color: #94a3b8 !important;
+}
+
+body.sunlight-mode ::placeholder {
+    color: #475569 !important;
+}
+
+body.sunlight-mode .border-slate-700,
+body.sunlight-mode .border-slate-800 {
+    border-color: #cbd5e1 !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Pulse animation for alerts */
+@keyframes criticalPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+    50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+.pulse-critical {
+    animation: criticalPulse 1.8s infinite;
+}
+
+/* ==========================================================================
+   PRINT STYLESHEET (Official PEA Inspection Report & Maintenance Certificate)
+   ========================================================================== */
+@media print {
+    body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+    
+    header, nav, #pea-global-header, .print\\:hidden, #pea-app-toast, button, .no-print {
+        display: none !important;
+    }
+
+    #pea-report-modal {
+        position: static !important;
+        background: transparent !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    #pea-report-modal > div {
+        position: static !important;
+        background: transparent !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    .document-content {
+        color: #000000 !important;
+        font-family: 'Sarabun', sans-serif !important;
+    }
+
+    table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+    }
+
+    th, td {
+        border: 1px solid #333333 !important;
+        color: #000000 !important;
+        padding: 6px 8px !important;
+    }
+
+    @page {
+        margin: 1.2cm;
+        size: A4 portrait;
+    }
+}

@@ -1,0 +1,8 @@
+# ไฟล์ที่ไม่ควรขึ้น GitHub Pages (เก็บไว้ใช้เฉพาะเครื่อง)
+js/*_backup_working_*.js
+test_thai.txt
+test_gsheet.mjs
+extract_apps_script.js
+APPS_SCRIPT_code_ready_to_paste.js
+server.js
+*.bat

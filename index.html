@@ -1,0 +1,666 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEA Smart Vehicle | ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ กฟภ.</title>
+
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            var errDiv = document.createElement('div');
+            errDiv.style.position = 'fixed';
+            errDiv.style.top = '0';
+            errDiv.style.left = '0';
+            errDiv.style.width = '100%';
+            errDiv.style.background = 'red';
+            errDiv.style.color = 'white';
+            errDiv.style.zIndex = '999999';
+            errDiv.style.padding = '10px';
+            errDiv.style.fontFamily = 'monospace';
+            errDiv.innerHTML = '<strong>FATAL ERROR:</strong> ' + message + ' <br>File: ' + source + ':' + lineno + ':' + colno;
+            if (document.body) document.body.appendChild(errDiv);
+            else window.addEventListener('DOMContentLoaded', () => document.body.appendChild(errDiv));
+        };
+    </script>
+
+    <!-- Cache Busting v0.7.16 -->
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'pea-purple': '#581c87',
+                        'pea-dark': '#3b0764',
+                        'pea-lightpurple': '#7e22ce',
+                        'pea-accent': '#a855f7',
+                        'pea-gold': '#f59e0b',
+                        'pea-goldlight': '#fbbf24',
+                        'safety-orange': '#ff6600',
+                        'safety-orange-hover': '#ff771a'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Custom CSS with Cache Busting v0.7.16 -->
+    <link rel="stylesheet" href="css/main.css?v=0.7.9">
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-purple-600 selection:text-white">
+
+    <!-- =====================================================================
+         TOP PEA CORPORATE HEADER (Responsive Header < 1150px)
+         ===================================================================== -->
+    <header id="pea-global-header" class="bg-gradient-to-r from-purple-950 via-[#3b0764] to-[#1e1035] border-b border-purple-800/50 shadow-xl sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-wrap justify-between items-center gap-3">
+            
+            <!-- Brand Logo & System Title -->
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-800 to-purple-950 border-2 border-amber-400 flex flex-col items-center justify-center shadow-lg shadow-purple-950/60 shrink-0">
+                    <span class="text-[11px] font-black text-amber-400 leading-none">PEA</span>
+                    <i class="fa-solid fa-bolt text-amber-400 text-sm mt-0.5"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[11px] font-extrabold tracking-wider text-amber-400 uppercase">การไฟฟ้าส่วนภูมิภาค</span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-purple-800/80 text-purple-200 border border-purple-500/30 font-mono font-bold">SAFETY FIRST</span>
+                        <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500 text-black font-mono font-black">v0.7.16</span>
+                    </div>
+                    <h1 class="text-sm sm:text-base font-black text-white tracking-tight flex items-center gap-2">
+                        PEA SMART VEHICLE
+                        <span class="text-[11px] font-semibold text-slate-300 hidden sm:inline">• ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ</span>
+                    </h1>
+                </div>
+            </div>
+
+            <!-- Header Controls & Responsive Header Action Group -->
+            <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+                
+                <!-- Live Clock & Network Badge -->
+                <div class="hidden md:flex flex-col text-right text-xs">
+                    <span class="text-slate-300 font-mono text-[11px]" id="live-clock">--:--:--</span>
+                    <div class="flex items-center justify-end gap-1.5 text-[11px] mt-0.5" id="network-status-badge">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span class="text-emerald-400 font-bold">Online (D1 Cloud)</span>
+                    </div>
+                </div>
+
+                <!-- Sync Queue Indicator Badge -->
+                <button onclick="app.triggerSyncNow()" id="sync-queue-badge" class="hidden text-[11px] px-2 py-1 rounded-lg bg-amber-500 text-black font-bold animate-pulse">
+                    0 รายการค้างซิงค์
+                </button>
+
+                <!-- Responsive Buttons with Safety Orange (< 1150px hides text) -->
+                <!-- Network Mode Simulation Button -->
+                <button onclick="app.toggleNetworkSimulation()" title="สลับโหมดจำลอง Online/Offline" 
+                    class="responsive-header-btn btn-safety-orange px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow">
+                    <i class="fa-solid fa-wifi"></i>
+                    <span class="header-btn-label">โหมดเน็ต</span>
+                </button>
+
+                <!-- Sunlight Mode Toggle Button -->
+                <button onclick="app.toggleSunlightMode()" title="สลับโหมดกลางแดด คอนทราสต์สูง" 
+                    class="responsive-header-btn btn-safety-orange px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow">
+                    <i id="sunlight-icon" class="fa-solid fa-sun"></i>
+                    <span id="sunlight-label" class="header-btn-label">โหมดกลางแดด</span>
+                </button>
+
+                <!-- Google Sheet Database Config Button -->
+                <button onclick="app.openGoogleSheetModal()" title="ตั้งค่าฐานข้อมูล Google Sheets" 
+                    id="header-googlesheet-btn" class="responsive-header-btn btn-safety-orange px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow">
+                    <i class="fa-solid fa-table"></i>
+                    <span class="header-btn-label">Google Sheet</span>
+                </button>
+
+                <!-- Role Selector -->
+                <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+                    <i class="fa-solid fa-user-shield text-pea-gold ml-2 text-xs"></i>
+                    <select id="user-role-select" class="bg-transparent text-xs text-white focus:outline-none pr-2 py-0.5 font-medium cursor-pointer">
+                        <option value="DRIVER" class="bg-slate-900 text-white">👤 พนักงานขับรถ (Driver)</option>
+                        <option value="MECHANIC" class="bg-slate-900 text-white">🔧 ช่างเครื่องยนต์ (Mechanic)</option>
+                        <option value="CHIEF" class="bg-slate-900 text-white">👨‍💼 หัวหน้างาน (Supervisor)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 border-t border-purple-900/60 overflow-x-auto">
+            <button onclick="app.setTab('inspect')" class="nav-tab-btn px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 bg-purple-900 text-amber-300 border-amber-400" data-tab="inspect">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <span class="nav-tab-label">1. ตรวจเช็กสภาพรถ (Driver)</span>
+            </button>
+            <button onclick="app.setTab('mechanic')" class="nav-tab-btn px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 border-transparent text-slate-300 hover:bg-slate-800" data-tab="mechanic">
+                <i class="fa-solid fa-wrench"></i>
+                <span class="nav-tab-label">2. งานแจ้งซ่อมบำรุง (Mechanic)</span>
+            </button>
+            <button onclick="app.setTab('supervisor')" class="nav-tab-btn px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 border-transparent text-slate-300 hover:bg-slate-800" data-tab="supervisor">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span class="nav-tab-label">3. แดชบอร์ดฟลีต & อนุมัติ (Supervisor)</span>
+            </button>
+            <button onclick="app.setTab('logs')" class="nav-tab-btn px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 border-transparent text-slate-300 hover:bg-slate-800" data-tab="logs">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span class="nav-tab-label">4. ประวัติกิจกรรม (Logs)</span>
+            </button>
+            <button onclick="app.setTab('trips')" class="nav-tab-btn px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 border-transparent text-slate-300 hover:bg-slate-800" data-tab="trips">
+                <i class="fa-solid fa-truck-fast text-blue-400"></i>
+                <span class="nav-tab-label">5. บันทึกขากลับ (Active Trips)</span>
+                <span id="nav-active-trips-badge" class="hidden text-[10px] px-1.5 py-0.2 rounded-full bg-blue-600 text-white font-mono font-bold">0</span>
+            </button>
+        </nav>
+    </header>
+
+    <!-- =====================================================================
+         MAIN WORKSPACE CONTAINER
+         ===================================================================== -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+        <!-- =================================================================
+             VIEW 1: DRIVER INSPECTION VIEW
+             ================================================================= -->
+        <section id="view-driver-inspect" class="space-y-6 animate-fade-in">
+            
+            <!-- Vehicle Selection Card & Status Bar -->
+            <!-- Vehicle Inspection & Operation Info Form (4 ส่วนตามมาตรฐานงาน กฟภ.) -->
+            <div class="pea-glass p-5 sm:p-6 rounded-2xl border border-purple-500/30 shadow-xl space-y-5">
+                
+                <!-- แถวด้านบน: ส่วนที่ 1 (ข้อมูลยานพาหนะ) & ส่วนที่ 2 (ข้อมูลทั่วไปและงานที่ปฏิบัติ) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                    
+                    <!-- ส่วนที่ 1: ข้อมูลยานพาหนะ (Vehicle Info) -->
+                    <div class="lg:col-span-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-truck-front text-amber-400"></i> ส่วนที่ 1: ข้อมูลยานพาหนะ (Vehicle Info)
+                            </label>
+                            <button type="button" onclick="app.openAddVehicleModal()" class="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/50 text-emerald-300 font-bold transition flex items-center gap-1 shadow-sm">
+                                <i class="fa-solid fa-plus text-[10px]"></i> เพิ่มรถยนต์คันใหม่
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="flex-1 min-w-0">
+                                <select id="vehicle-select-dropdown" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 font-semibold cursor-pointer shadow-inner truncate">
+                                    <option value="PEA-PK-4501" selected>กพ-4501 กาญจนบุรี - Toyota Hilux Revo 4x4 2.8 D-4D (PEA-PK-4501)</option>
+                                    <option value="PEA-CR-8820">82-8820 นครปฐม - Hino 500 Victor + เครน Tadano 5 ตัน (PEA-CR-8820)</option>
+                                    <option value="PEA-BK-3305">กง-3305 สุพรรณบุรี - Isuzu Forward 240 + กระเช้าฉนวน Altec 14M (PEA-BK-3305)</option>
+                                    <option value="PEA-SD-1102">2ขข-1102 กรุงเทพฯ - Toyota Camry 2.5 HEV Premium (PEA-SD-1102)</option>
+                                </select>
+                            </div>
+                            <button type="button" onclick="app.openEditVehicleModal()" title="แก้ไขข้อมูลรถยนต์คันที่เลือก" class="px-2.5 py-2 rounded-xl bg-amber-950/70 hover:bg-amber-900 border border-amber-500/50 text-amber-300 hover:text-white transition flex items-center justify-center text-xs shadow-sm">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button type="button" onclick="app.confirmDeleteCurrentVehicle()" title="ลบข้อมูลรถยนต์คันที่เลือกออกจากระบบ" class="px-2.5 py-2 rounded-xl bg-red-950/70 hover:bg-red-900 border border-red-500/50 text-red-300 hover:text-white transition flex items-center justify-center text-xs shadow-sm">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                            <span>ระบบจดจำคันล่าสุดอัตโนมัติ</span>
+                            <span class="text-slate-500">จัดการ: เพิ่ม / แก้ไข / ลบรถ</span>
+                        </div>
+                    </div>
+
+                    <!-- ส่วนที่ 2: ข้อมูลทั่วไปและงานที่ปฏิบัติ (General Info) -->
+                    <div class="lg:col-span-8 bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-black text-purple-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-id-card text-purple-400"></i> ส่วนที่ 2: ข้อมูลทั่วไปและงานที่ปฏิบัติ (General Info)
+                            </label>
+                            <button type="button" onclick="app.openEmployeeManagementModal()" class="text-[11px] px-2.5 py-0.5 rounded-lg bg-purple-900/70 hover:bg-purple-800 border border-purple-500/50 text-purple-200 font-bold transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-users-gear text-[10px] text-purple-300"></i> จัดการรายชื่อพนักงาน
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                            <!-- ช่องกรอก 'รหัสพนักงาน' (Numeric Keyboard) พร้อม Auto-fetch -->
+                            <div class="sm:col-span-3">
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                                    <span class="flex items-center gap-1">
+                                        <i class="fa-solid fa-hashtag text-slate-400"></i> รหัสพนักงาน:
+                                    </span>
+                                    <span id="emp-lookup-badge" class="hidden text-[9px] px-1.5 py-0.2 rounded font-mono font-bold"></span>
+                                </label>
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="employee-id-input" oninput="app.handleEmployeeIdInput(this.value)"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-400 transition" placeholder="เช่น 512446">
+                                <p id="emp-lookup-msg" class="text-[10px] mt-1 text-slate-400 min-h-[16px] transition-all"></p>
+                            </div>
+
+                            <!-- ช่องกรอก 'ชื่อ-นามสกุล' -->
+                            <div class="sm:col-span-4">
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                                    <i class="fa-solid fa-user text-slate-400"></i> ชื่อ-นามสกุล ผู้ปฏิบัติงาน:
+                                </label>
+                                <input type="text" id="inspector-name-input" 
+                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-medium focus:outline-none focus:border-amber-400 transition" placeholder="ระบุชื่อ-นามสกุล">
+                                <p id="emp-dept-msg" class="text-[10px] mt-1 text-slate-400 min-h-[16px] truncate"></p>
+                            </div>
+
+                            <!-- ช่องกรอก 'งานที่ต้องปฏิบัติ' (กว้างเพียงพอ) -->
+                            <div class="sm:col-span-5">
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                                    <i class="fa-solid fa-briefcase text-slate-400"></i> งานที่ต้องปฏิบัติ (ภารกิจ):
+                                </label>
+                                <input type="text" id="task-description-input" 
+                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400 placeholder:text-slate-500" placeholder="เช่น แก้ไขกระแสไฟฟ้าขัดข้อง สาย 22kV วงจร 1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- แถวล่าง: ส่วนที่ 3 (ข้อมูลการเดินทาง) & ส่วนที่ 4 (ข้อมูลเชื้อเพลิง) -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                    
+                    <!-- ส่วนที่ 3: ข้อมูลการเดินทาง (Mileage Info - Grid Layout) -->
+                    <div class="lg:col-span-8 bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-black text-emerald-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-route text-emerald-400"></i> ส่วนที่ 3: ข้อมูลการเดินทาง (Mileage Info)
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <span id="vehicle-duty-status-badge" class="hidden text-[10px] px-2 py-0.5 rounded-full font-bold"></span>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div>
+                                <!-- ช่องกรอก 'เลขไมล์ไป (ก่อนปฏิบัติงาน)' (Numeric Keyboard) -->
+                                <label class="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                                    <span class="flex items-center gap-1">
+                                        <i class="fa-solid fa-play text-emerald-400"></i> เลขไมล์ไป (ก่อนปฏิบัติงาน):
+                                    </span>
+                                    <span class="text-[10px] text-slate-400 font-mono">ดึงเลขไมล์ล่าสุดอัตโนมัติ</span>
+                                </label>
+                                <input type="number" inputmode="numeric" id="start-mileage-input"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-400 transition" placeholder="ระบุเลขไมล์เริ่มต้น">
+                                <p class="text-[10px] text-slate-400 mt-1">
+                                    <i class="fa-solid fa-circle-info text-blue-400 mr-1"></i> ตรวจสอบความถูกต้องก่อนกด 'บันทึกรถออกปฏิบัติงาน' (เลขไมล์กลับและผลต่างจะบันทึกในแท็บ 'บันทึกขากลับ')
+                                </p>
+                            </div>
+                            
+                            <button type="button" id="btn-start-duty" onclick="app.recordDeparture()" class="w-full text-xs py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition flex items-center justify-center gap-2 shadow-lg">
+                                <i class="fa-solid fa-truck-fast text-sm"></i> บันทึกรถออกปฏิบัติงาน (บันทึกข้อมูลขาไป)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ส่วนที่ 4: ข้อมูลเชื้อเพลิง (Fuel Info) -->
+                    <div class="lg:col-span-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                                <i class="fa-solid fa-gas-pump text-amber-400"></i> ส่วนที่ 4: ข้อมูลเชื้อเพลิง (Fuel Info)
+                            </label>
+                            <span class="text-[10px] text-slate-400">หน่วย: ลิตร</span>
+                        </div>
+
+                        <div>
+                            <!-- ช่องกรอก 'น้ำมันเชื้อเพลิงที่เติม' (Numeric Keyboard) -->
+                            <label class="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                                <i class="fa-solid fa-oil-can text-amber-400"></i> น้ำมันเชื้อเพลิงที่เติม (ลิตร):
+                            </label>
+                            <div class="relative">
+                                <input type="number" inputmode="decimal" id="fuel-refill-input" step="0.1" min="0" value="0"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 pr-12 text-xs text-white font-mono font-bold focus:outline-none focus:border-amber-400" placeholder="0.0">
+                                <span class="absolute right-3 top-2.5 text-[11px] text-slate-400 font-bold">ลิตร</span>
+                            </div>
+                        </div>
+
+                        <p class="text-[10px] text-slate-400 leading-tight">หากไม่มีการเติมระหว่างปฏิบัติงาน ให้คงค่าไว้ที่ 0 ลิตร</p>
+                    </div>
+                </div>
+
+                <!-- Active Vehicle Details & Alerts (PM 10k km & Tax) -->
+                <div class="border-t border-slate-800/80 pt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div class="text-base font-black text-white" id="active-vehicle-plate">กพ-4501 กาญจนบุรี</div>
+                        <div class="text-xs text-slate-400" id="active-vehicle-model">Toyota Hilux Revo 4x4 2.8 D-4D</div>
+                    </div>
+
+                    <!-- Dynamic PM & Tax Alert Badges -->
+                    <div class="flex flex-wrap items-center gap-2" id="vehicle-alert-badges">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step-by-Step Checklist Navigation (4 Tabs) -->
+            <div class="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+                <button id="step-btn-exterior" onclick="app.setChecklistStep('EXTERIOR')" class="px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-purple-800 text-amber-300 border-2 border-amber-400 shadow-md">
+                    <i class="fa-solid fa-car-side"></i> 1. ภายนอกตัวรถ
+                </button>
+                <button id="step-btn-interior" onclick="app.setChecklistStep('INTERIOR')" class="px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700">
+                    <i class="fa-solid fa-gauge-high"></i> 2. ภายใน & ห้องเครื่อง
+                </button>
+                <button id="step-btn-safety" onclick="app.setChecklistStep('SAFETY')" class="px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700">
+                    <i class="fa-solid fa-shield-halved"></i> 3. อุปกรณ์เซฟตี้ PEA
+                </button>
+                <button id="step-btn-special" onclick="app.setChecklistStep('SPECIAL')" class="px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700">
+                    <i class="fa-solid fa-screwdriver-wrench"></i> 4. เครื่องมือเฉพาะทาง
+                </button>
+            </div>
+
+            <!-- Category Header -->
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-white flex items-center" id="checklist-category-title">
+                    <i class="fa-solid fa-car-side text-amber-400 mr-2"></i> หมวดที่ 1: ภายนอกตัวรถ (Exterior)
+                </h3>
+                <span class="text-xs text-slate-400 font-medium">กดปุ่ม "ผ่านเกณฑ์" หรือ "ชำรุด" เพื่อบันทึกผล</span>
+            </div>
+
+            <!-- Checklist Items List (Dynamic Rows) -->
+            <div class="space-y-3" id="checklist-items-container">
+                <!-- Populated dynamically -->
+            </div>
+
+            <!-- Bottom Action Navigation -->
+            <div class="pea-glass p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 sticky bottom-3 z-30 shadow-2xl">
+                <!-- Next Step Button (Purple) -->
+                <button id="checklist-next-step-btn" class="bg-purple-900 hover:bg-purple-800 text-amber-300 border border-purple-500/60 px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow">
+                    ถัดไป: หมวดที่ 2 ภายใน & ห้องเครื่อง <i class="fa-solid fa-arrow-right"></i>
+                </button>
+
+                <!-- Submit Inspection Button (Safety Orange) -->
+                <button id="submit-inspection-btn" onclick="app.submitInspection()" class="btn-safety-orange px-6 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 shadow-xl">
+                    <i class="fa-solid fa-cloud-arrow-up text-black"></i> บันทึกส่งรายงาน & วิเคราะห์ความปลอดภัยทันที
+                </button>
+            </div>
+        </section>
+
+        <!-- =================================================================
+             VIEW 2: MECHANIC REPAIR TICKETS
+             ================================================================= -->
+        <section id="view-mechanic-tickets" class="hidden space-y-6 animate-fade-in">
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-wrench text-pea-gold"></i> ตารางงานแจ้งซ่อมบำรุงรักษา (Active Repair Tickets)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">เคลียร์ปัญหาจุดชำรุด ดำเนินการซ่อม และอัปโหลดภาพถ่ายหลักฐานหลังการแก้ไข</p>
+                </div>
+
+                <!-- Filter Buttons -->
+                <div class="flex items-center gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                    <button id="mech-filter-all" onclick="app.setMechanicFilter('ALL')" class="px-3 py-1.5 rounded-lg font-bold bg-amber-500 text-black border border-amber-400">
+                        ทั้งหมด
+                    </button>
+                    <button id="mech-filter-critical" onclick="app.setMechanicFilter('CRITICAL')" class="px-3 py-1.5 rounded-lg font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700">
+                        🚨 งดใช้งาน (ด่วน)
+                    </button>
+                    <button id="mech-filter-warning" onclick="app.setMechanicFilter('WARNING')" class="px-3 py-1.5 rounded-lg font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700">
+                        ⚠️ เฝ้าระวัง
+                    </button>
+                </div>
+            </div>
+
+            <!-- Repair Tickets Cards -->
+            <div class="space-y-4" id="mechanic-tickets-container">
+                <!-- Populated dynamically -->
+            </div>
+        </section>
+
+        <!-- =================================================================
+             VIEW 3: SUPERVISOR DASHBOARD
+             ================================================================= -->
+        <section id="view-supervisor-dashboard" class="hidden space-y-6 animate-fade-in">
+            
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-tower-broadcast text-pea-gold"></i> แดชบอร์ดห้องควบคุมกองยานพาหนะ (Supervisor Fleet Control)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">ติดตามสถานะฟลีทแบบ Real-time แจ้งเตือนรอบ PM 10,000 กม. และอนุมัติการซ่อมบำรุง</p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button onclick="app.openAddVehicleModal()" class="btn-safety-orange px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-plus"></i> เพิ่มรถใหม่เข้าฟลีต
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Fleet Statistics Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                
+                <!-- Total -->
+                <div onclick="app.setFleetFilter('ALL')" class="pea-glass p-4 rounded-2xl border border-slate-800 cursor-pointer hover:border-amber-400 transition">
+                    <div class="text-[11px] text-slate-400 font-semibold">รถทั้งหมดในสังกัด</div>
+                    <div class="text-2xl font-black text-white mt-1" id="stat-total-vehicles">0</div>
+                    <div class="text-[10px] text-slate-500 mt-1">คลิกเพื่อดูทั้งหมด</div>
+                </div>
+
+                <!-- Ready -->
+                <div onclick="app.setFleetFilter('READY')" class="pea-glass p-4 rounded-2xl border border-emerald-500/30 bg-emerald-950/10 cursor-pointer hover:border-emerald-400 transition">
+                    <div class="text-[11px] text-emerald-300 font-semibold">พร้อมใช้งาน (Ready)</div>
+                    <div class="text-2xl font-black text-emerald-400 mt-1" id="stat-ready-vehicles">0</div>
+                    <div class="text-[10px] text-emerald-500/80 mt-1">เกณฑ์ปลอดภัย 100%</div>
+                </div>
+
+                <!-- Warning -->
+                <div onclick="app.setFleetFilter('WARNING')" class="pea-glass p-4 rounded-2xl border border-amber-500/30 bg-amber-950/10 cursor-pointer hover:border-amber-400 transition">
+                    <div class="text-[11px] text-amber-300 font-semibold">เฝ้าระวัง (Warning)</div>
+                    <div class="text-2xl font-black text-amber-400 mt-1" id="stat-warning-vehicles">0</div>
+                    <div class="text-[10px] text-amber-500/80 mt-1">มีจุดสึกหรอเล็กน้อย</div>
+                </div>
+
+                <!-- Critical -->
+                <div onclick="app.setFleetFilter('CRITICAL')" class="pea-glass p-4 rounded-2xl border border-red-500/30 bg-red-950/10 cursor-pointer hover:border-red-400 transition">
+                    <div class="text-[11px] text-red-300 font-semibold">งดใช้งาน (Critical)</div>
+                    <div class="text-2xl font-black text-red-400 mt-1" id="stat-critical-vehicles">0</div>
+                    <div class="text-[10px] text-red-500/80 mt-1">ระงับการใช้ทันที</div>
+                </div>
+
+                <!-- PM Due (10,000 km) -->
+                <div class="pea-glass p-4 rounded-2xl border border-purple-500/30 bg-purple-950/20">
+                    <div class="text-[11px] text-purple-300 font-semibold">รอบ PM 10,000 กม.</div>
+                    <div class="text-2xl font-black text-amber-300 mt-1" id="stat-pm-due">0</div>
+                    <div class="text-[10px] text-purple-400 mt-1">ต้องเข้าถ่ายของเหลว</div>
+                </div>
+
+                <!-- Tax Alert -->
+                <div class="pea-glass p-4 rounded-2xl border border-orange-500/30 bg-orange-950/20">
+                    <div class="text-[11px] text-orange-300 font-semibold">แจ้งเตือนต่อภาษี</div>
+                    <div class="text-2xl font-black text-orange-400 mt-1" id="stat-tax-due">0</div>
+                    <div class="text-[10px] text-orange-400 mt-1">หมดอายุ / เหลือ <30 วัน</div>
+                </div>
+            </div>
+
+            <!-- Fleet Status Chart & Visual Summary (กราฟวงกลมสรุปสถานะสภาพรถยนต์) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                
+                <!-- Doughnut/Pie Chart Card -->
+                <div class="pea-glass p-5 rounded-2xl border border-purple-500/40 shadow-xl flex flex-col justify-between">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                        <h3 class="text-sm font-black text-white flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-amber-400"></i> สรุปสถานะสภาพรถยนต์
+                        </h3>
+                        <span class="text-[10px] px-2 py-0.5 rounded bg-purple-900 text-amber-300 font-mono font-bold">กราฟวงกลม</span>
+                    </div>
+
+                    <!-- Canvas -->
+                    <div class="relative flex items-center justify-center my-1 h-48">
+                        <canvas id="fleet-status-pie-chart"></canvas>
+                    </div>
+
+                    <!-- Custom Interactive Legend -->
+                    <div class="grid grid-cols-3 gap-1 text-center pt-2 border-t border-slate-800 text-[11px]" id="pie-chart-legend-metrics">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Approvals Section (Pending Signoff with Before/After Photos) -->
+                <div class="lg:col-span-2 pea-glass p-5 rounded-2xl border border-purple-500/40 shadow-xl space-y-3 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                            <h3 class="text-sm font-black text-white flex items-center gap-2">
+                                <i class="fa-solid fa-signature text-amber-400"></i> รายการงานซ่อมที่รอการอนุมัติ (Supervisor Approval Queue)
+                            </h3>
+                            <span class="text-xs text-slate-400">ตรวจสอบภาพก่อน-หลังซ่อม และกดอนุมัติ</span>
+                        </div>
+                        <div id="supervisor-approval-queue" class="space-y-3 max-h-52 overflow-y-auto pr-1">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-slate-500 text-right pt-2 border-t border-slate-800">
+                        อนุมัติแล้วข้อมูลจะซิงค์เข้า Google Sheets อัตโนมัติ
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Duty / Out on Duty Tracking Widget on Dashboard -->
+            <div class="pea-glass rounded-2xl border border-blue-500/40 overflow-hidden shadow-xl">
+                <div class="p-4 border-b border-slate-800 bg-slate-950/70 flex justify-between items-center">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg bg-blue-900/60 border border-blue-500/50 flex items-center justify-center text-blue-400">
+                            <i class="fa-solid fa-truck-fast"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                รถยนต์ที่กำลังออกไปปฏิบัติงานในขณะนี้ (Active Vehicles / Out on Duty)
+                            </h3>
+                            <p class="text-[11px] text-slate-400">ติดตามรถที่นำออกปฏิบัติงานนอกสถานที่แบบเรียลไทม์</p>
+                        </div>
+                    </div>
+                    <span id="active-duty-count-badge" class="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono font-bold text-xs border border-slate-700">0 คัน</span>
+                </div>
+                <div id="active-duty-container" class="p-4 sm:p-5">
+                    <!-- Populated dynamically by app.renderActiveDutyWidget() -->
+                </div>
+            </div>
+
+            <!-- Fleet Inventory Table -->
+            <div class="pea-glass rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-pea-gold"></i> รายการยานพาหนะในสังกัดทั้งหมด
+                    </h3>
+                    <span class="text-xs text-slate-400 font-mono">สถานะปัจจุบัน</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/90 text-slate-400 text-[11px] font-semibold border-b border-slate-800">
+                                <th class="py-2.5 px-3">ทะเบียน / รหัสรถ</th>
+                                <th class="py-2.5 px-3">รุ่น / แผนกสังกัด</th>
+                                <th class="py-2.5 px-3">เลขไมล์ / รอบ PM 10k</th>
+                                <th class="py-2.5 px-3">วันหมดอายุภาษี</th>
+                                <th class="py-2.5 px-3">สถานะตัวรถ</th>
+                                <th class="py-2.5 px-3 text-right">รายงานทางการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fleet-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================
+             VIEW 4: ACTIVITY LOGS & REPORTS (Log Consolidation)
+             ================================================================= -->
+        <section id="view-activity-logs" class="hidden space-y-6 animate-fade-in">
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-pea-gold"></i> ประวัติกิจกรรมและการตรวจสภาพ (Audit Trail & Activity Logs)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">ระบบรวมผลประวัติกิจกรรมซ่อม (Log Consolidation) 1 แถวต่อ 1 ใบงานเพื่อความกระชับและตรวจสอบได้ 100%</p>
+                </div>
+            </div>
+
+            <div class="pea-glass rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/90 text-slate-400 text-[11px] font-semibold border-b border-slate-800">
+                                <th class="py-3 px-3">วัน-เวลา</th>
+                                <th class="py-3 px-3">ยานพาหนะ</th>
+                                <th class="py-3 px-3">ผู้ปฏิบัติงาน / บทบาท</th>
+                                <th class="py-3 px-3">รายละเอียดกิจกรรม (Consolidated Log)</th>
+                                <th class="py-3 px-3 text-right">สถานะ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activity-logs-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================
+             VIEW 5: ACTIVE TRIPS & RETURN MILEAGE (แท็บบันทึกขากลับ / สิ้นสุดภารกิจ)
+             ================================================================= -->
+        <section id="view-active-trips" class="hidden space-y-6 animate-fade-in">
+            <div class="flex flex-wrap justify-between items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-black text-white flex items-center gap-2">
+                        <i class="fa-solid fa-truck-fast text-blue-400"></i> รายการรถที่กำลังออกปฏิบัติงาน (Active Trips List)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">รายการรถทุกคันที่กำลังอยู่ในสถานะออกปฏิบัติงาน (ยังไม่ได้ปิดงาน) พร้อมปุ่มบันทึกขากลับและคำนวณระยะทางอัตโนมัติ</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="trips-count-badge" class="px-3 py-1 rounded-xl bg-blue-900/70 border border-blue-500/40 text-blue-300 font-mono font-bold text-xs flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-satellite-dish text-emerald-400"></i> กำลังปฏิบัติงาน: <span id="trips-count-number" class="text-amber-300">0</span> คัน
+                    </span>
+                </div>
+            </div>
+
+            <!-- Active Trips Table Container -->
+            <div class="pea-glass rounded-2xl border border-blue-500/40 overflow-hidden shadow-2xl">
+                <div class="p-4 border-b border-slate-800 bg-slate-950/70 flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-pea-gold"></i> ตรวจสอบสถานะและกดปุ่ม 'บันทึกขากลับ' เพื่อปิดงาน
+                    </h3>
+                    <span class="text-xs text-slate-400 font-mono">Real-time Duty Tracker</span>
+                </div>
+                <div id="active-trips-table-container" class="p-4 sm:p-5">
+                    <!-- Populated dynamically by app.renderActiveTripsTab() -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-[#090d16] border-t border-slate-800/80 py-4 text-center text-xs text-slate-400 no-print">
+        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-between items-center gap-2">
+            <div>
+                © การไฟฟ้าส่วนภูมิภาค (PEA) • <b>PEA Smart Vehicle</b> Build <span class="font-mono text-amber-400 font-bold">v0.7.16</span>
+            </div>
+            <div class="flex items-center gap-3 text-[11px]">
+                <span><i class="fa-solid fa-shield-halved text-emerald-400"></i> Safety First Standard</span>
+                <span><i class="fa-solid fa-database text-purple-400"></i> Cloudflare D1 Sync Ready</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- =====================================================================
+         MODAL CONTAINERS
+         ===================================================================== -->
+    <div id="pea-defect-modal"></div>
+    <div id="pea-repair-modal"></div>
+    <div id="pea-analysis-modal"></div>
+    <div id="pea-report-modal"></div>
+    <div id="pea-add-vehicle-modal"></div>
+    <div id="pea-googlesheet-modal"></div>
+    <div id="pea-return-mileage-modal"></div>
+
+    <!-- =====================================================================
+         SCRIPTS WITH CACHE BUSTING v0.7.16
+         ===================================================================== -->
+    <script src="js/vehicleData.js?v=0.7.9"></script>
+    <script src="js/db.js?v=0.7.9"></script>
+    <script src="js/notification.js?v=0.7.9"></script>
+    <script src="js/reportGenerator.js?v=0.7.9"></script>
+    <script src="js/googleSheetService.js?v=0.7.9"></script>
+    <script src="js/app.js?v=0.7.9"></script>
+</body>
+</html>
+
