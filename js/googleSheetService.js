@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.29
+ * Build Version: v0.7.30
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -925,7 +925,7 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 
     // รวมรายการรถจาก snapshot กับ LocalStorage โดย "ไม่ให้ข้อมูลถอยหลัง"
     // (merge ด้วย updatedAt: remote ใหม่กว่า => ใช้ remote; local ใหม่กว่า => คง local)
-    mergeVehiclesFromSnapshot(snapshotRows, localVehicles) {
+    mergeVehiclesFromSnapshot(snapshotRows, localVehicles, allDepartures) {
         const localById = {};
         (localVehicles || []).forEach(v => { if (v && v.id) localById[v.id] = v; });
 
@@ -980,6 +980,25 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 seen[String(v.id)] = true;
             }
         });
+
+        // ยกพื้น "เลขไมล์ห้ามถอยหลัง" ด้วยเลขไมล์ขากลับ (endMileage) สูงสุดเท่าที่เคยมีในสมุดเข้า-ออก
+        // เพราะสมุดกลางเคยถูกเครื่องเก่าดันค่าไมล์ต่ำกว่ากลับไปได้ (ก่อน GAS v0.7.29 ห้ามถอย) —
+        // การประกันไว้นี้ทำให้เครื่องที่ดึงข้อมูลมาเห็นเลขไมล์ที่ถูกต้อง ไม่ยอมรับค่าที่ต่ำกว่า
+        const depMaxById = {};
+        (allDepartures || []).forEach(d => {
+            if (!d || !d.vehicleId) return;
+            if (/ออกปฏิบัติงาน|กำลังปฏิบัติงาน/.test(String(d.status || ''))) return; // ยังไม่กลับ ไม่อ่าน
+            const id = String(d.vehicleId);
+            const km = Number(d.endMileage) || 0;
+            if (!(id in depMaxById) || km > depMaxById[id]) depMaxById[id] = km;
+        });
+        if (Object.keys(depMaxById).length > 0) {
+            merged.forEach(v => {
+                if (!v || !v.id) return;
+                const km = depMaxById[String(v.id)] || 0;
+                if (km > (Number(v.mileage) || 0)) v.mileage = km;
+            });
+        }
 
         return merged;
     }

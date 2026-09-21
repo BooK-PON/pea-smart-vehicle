@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.29
+* Build Version: v0.7.30
  */
 
 class PEASmartVehicleApp {
@@ -2214,7 +2214,7 @@ const diff = this._taxDaysLeft(v) === null ? 999 : this._taxDaysLeft(v);
     // =========================================================================
     // Google Sheets Integration Modal & Actions (ฐานข้อมูล Google Sheets)
 // รุ่น GAS template ที่แอปนี้ต้องการให้เชื่อมต่อ (ต้องปั่นตรงกับ APPS_SCRIPT_code_ready_to_paste.js)
-    GAS_BUILD_TARGET = 'GAS-v0.7.29';
+    GAS_BUILD_TARGET = 'GAS-v0.7.30';
 
     renderGasBuildStatus() {
         const el = document.getElementById('gas-build-status');
@@ -2528,7 +2528,7 @@ exportGoogleSheetCSV() {
 
         try {
             let merged = [];
-            try { merged = googleSheet.mergeVehiclesFromSnapshot(realRemoteVehicles, localVehicles) || []; } catch(e) { console.warn('[PEA] Merge vehicles error:', e); }
+            try { merged = googleSheet.mergeVehiclesFromSnapshot(realRemoteVehicles, localVehicles, realRemoteDepartures) || []; } catch(e) { console.warn('[PEA] Merge vehicles error:', e); }
 
             const hasAnyData = merged.length > 0 || realRemoteEmployees.length > 0 || realRemoteRepairs.length > 0 || realRemoteDepartures.length > 0 || realRemoteInspections.length > 0;
             if (!hasAnyData) {
@@ -4042,9 +4042,25 @@ saveAlertEmails() {
             return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
         }
 
+        const claims = Array.isArray(cycleClaims) ? cycleClaims : [];
+
+        // Cooldown 30 นาทีต่อรอบการแจ้งเตือน (key ฝังค่า baseline ไว้ด้วย)
+        // กัน "ส่งซ้ำไม่หยุด": ถ้าส่ง FAIL แล้ว claim ถูกลบ ปกติระบบจะยิงซ้ำทุก 2 นาทีตลอดไป
+        // cooldown จะถูก stamp ไว้ตั้งแต่ก่อนลองส่ง → ครอบคลุมทั้งกรณีสำเร็จและล้มเหลว
+        const COOLDOWN_ALERT_MS = 30 * 60 * 1000;
+        const cooldownKeys = claims.filter(c => c && c.key).map(c => `pea_alert_cd_${c.key}_${String(c.value)}`);
+        const nowTs = Date.now();
+        if (cooldownKeys.length > 0 && cooldownKeys.some(k => {
+            const last = Number(localStorage.getItem(k) || 0);
+            return (nowTs - last) < COOLDOWN_ALERT_MS;
+        })) {
+            console.log(`[Email Alert] ข้ามส่ง (cooldown 30 นาที): "${subject}"`);
+            return;
+        }
+        cooldownKeys.forEach(k => localStorage.setItem(k, String(nowTs)));
+
         // "อ้างสิทธิ์" (claim) วงรอบก่อนส่งจริง — กัน race condition เมื่อเปิด 2 แท็บพร้อมกัน
         // TS: เขียน lock ก่อน แล้วค่อยส่ง; ถ้าส่งไม่สำเร็จจึงยกเลิก เพื่อไม่ให้อีเมลซ้ำจากอีกแท็บ
-        const claims = Array.isArray(cycleClaims) ? cycleClaims : [];
         claims.forEach(c => { if (c && c.key) localStorage.setItem(c.key, String(c.value)); });
 
         console.log('[Email Alert] กำลังส่ง: "' + subject + '" → ' + list.join(', '));
