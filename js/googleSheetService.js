@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.22
+ * Build Version: v0.7.23
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -628,7 +628,7 @@ class PEAGoogleSheetService {
         if (!snapshot.success) {
             return {
                 success: false,
-                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.22 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
+                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.23 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
                 sent: true,
                 detail: snapshot
             };
@@ -766,7 +766,7 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     return {
                         success: false,
                         reason: 'OLD_SCRIPT',
-                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.22 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
+                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.23 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
                     };
                 }
                 return { success: false, reason: 'BAD_RESPONSE', payload, message: 'GAS ตอบกลับรูปแบบที่ไม่รู้จัก' };
@@ -839,6 +839,32 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         );
     }
 
+    // แปลง timestamp → epoch ms (รองรับ ISO และรูปแบบไทย "d/m/yyyy, HH:MM:SS" / "d/m/yyyy HH:MM:SS")
+    // เพื่อให้ merge เปรียบเทียบ "ใครใหม่กว่า" ได้ถูกต้อง (ไม่ได้เทียบ string ซึ่ง ISO กับ th-TH เรียงผิดกัน)
+    parseTsMs(ts) {
+        if (!ts) return 0;
+        const s = String(ts).trim();
+        // ISO: 2026-09-21T14:30:00.000Z หรือ 2026-09-21 14:30:00
+        let m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+        if (m) {
+            const y = parseInt(m[1], 10), mo = parseInt(m[2], 10) - 1, d = parseInt(m[3], 10);
+            const h = parseInt(m[4], 10), mi = parseInt(m[5], 10), se = parseInt(m[6] || '0', 10);
+            const dt = new Date(y, mo, d, h, mi, se);
+            return isNaN(dt.getTime()) ? 0 : dt.getTime();
+        }
+        // ไทย/ยุโรป: 21/9/2569, 14:30:00 หรือ 21/9/2569 14:30:00 (พุทธศักราช -543)
+        m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\D*(\d{1,2})?:?(\d{2})?:?(\d{2})?/.exec(s);
+        if (m) {
+            let y = parseInt(m[3], 10);
+            if (y > 2500) y -= 543; // พุทธศักราช
+            const mo = parseInt(m[2], 10) - 1, d = parseInt(m[1], 10);
+            const h = parseInt(m[4] || '0', 10), mi = parseInt(m[5] || '0', 10), se = parseInt(m[6] || '0', 10);
+            const dt = new Date(y, mo, d, h, mi, se);
+            return isNaN(dt.getTime()) ? 0 : dt.getTime();
+        }
+        return 0;
+    }
+
     // แปลงแถว Vehicles จากชีต -> object เดียวกับ schema ของ db
     // ลำดับ: ใช้ jsonFull (ข้อมูลเต็มทีเขียนไป) ก่อน ถ้าไม่มี => จับคู่ column headers
     normalizeVehicleRow(row, fallbackVehicle) {
@@ -886,16 +912,26 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const local = localById[id] || null;
             const normalized = this.normalizeVehicleRow(row, local);
 
-            // ตัดสินใจ merge ด้วย updatedAt ถ้ามีทั้งสองฝั่ง
+            // ตัดสินใจ merge ด้วย updatedAt (parsed เป็นตัวเลข) ถ้ามีทั้งสองฝั่ง
+            // local ใหม่กว่า => เก็บ local ไว้ทั้งช่อง ไม่ให้ข้อมูลถอยหลัง (เดิมเก็บแค่ 3 ฟิลด์ อื่นๆ ถูก remote แก้ทับทั้งที่เก่ากว่า)
             if (local) {
-                const localTs = (local.updatedAt || local.lastInspectDate || '').toString();
-                const remoteTs = (normalized.updatedAt || normalized.lastInspectDate || '').toString();
-                if (remoteTs && localTs && remoteTs < localTs) {
-                    normalized.mileage = local.mileage;
-                    normalized.fuelLevel = local.fuelLevel;
-                    normalized.status = local.status !== undefined ? local.status : localById[id] ? localById[id].status : 'READY';
-                    normalized.updatedAt = local.updatedAt;
+                const localTs = this.parseTsMs(local.updatedAt || local.lastInspectDate || '');
+                const remoteTs = this.parseTsMs(normalized.updatedAt || normalized.lastInspectDate || '');
+                if (localTs && remoteTs && remoteTs < localTs) {
+                    const keep = Object.assign({}, normalized, local);
+                    keep.updatedAt = local.updatedAt || normalized.updatedAt || '';
+                    merged.push(keep);
+                    return;
                 }
+                // remote ใหม่กว่า -> ใช้ normalized (remote) ทั้งหมด ยกเว้นฟิลด์ที่ local มีแต่ remote ขาดหายไป
+                const filled = Object.assign({}, normalized);
+                ['lastPmMileage', 'fuelLevel', 'lastInspectDate', 'status'].forEach(f => {
+                    if ((filled[f] === undefined || filled[f] === null || filled[f] === '') && local[f] !== undefined && local[f] !== '') {
+                        filled[f] = local[f];
+                    }
+                });
+                merged.push(filled);
+                return;
             }
             merged.push(normalized);
         });

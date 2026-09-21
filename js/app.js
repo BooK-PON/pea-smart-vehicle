@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.22
+ * Build Version: v0.7.23
  */
 
 class PEASmartVehicleApp {
@@ -318,6 +318,33 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
         this.renderPmAndTaxBadges(v);
     }
 
+    // แปลงวันที่ YYYY-MM-DD เป็น local midnight (หลีกเลี่ยง new Date('YYYY-MM-DD') ที่แปลเป็น UTC → เลื่อน 1 วันใน UTC+7)
+    _taxExpiryDate(str) {
+        if (!str || typeof str !== 'string') return null;
+        const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        const y = parseInt(m[1], 10), mo = parseInt(m[2], 10) - 1, d = parseInt(m[3], 10);
+        if (mo < 0 || mo > 11 || d < 1 || d > 31) return null;
+        return new Date(y, mo, d);
+    }
+
+    // จำนวนวันจากวันนี้ ถึงวันหมดอายุ (ติดลบ = ขาดแล้ว); null = ข้อมูลไม่ถูก
+    _taxDaysLeft(vehicle) {
+        const exp = this._taxExpiryDate(vehicle && vehicle.taxExpiry);
+        if (!exp) return null;
+        const today = new Date();
+        const localToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        return Math.round((exp - localToday) / (1000 * 60 * 60 * 24));
+    }
+
+    // ระยะวิ่งตั้งแต่รอบ PM ก่อน — กัน NaN เมื่อ legacy row ไม่มี lastPmMileage
+    _pmDistanceKm(v) {
+        const mileage = Number(v && v.mileage) || 0;
+        const lastPm = Number(v && v.lastPmMileage) || 0;
+        if (!lastPm && !mileage) return 0;
+        return mileage - lastPm;
+    }
+
     renderPmAndTaxBadges(v) {
         const container = document.getElementById('vehicle-alert-badges');
         if (!container) return;
@@ -350,7 +377,7 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
         }
 
 // 2. PM 10,000 km calculation
-        const distanceSincePm = v.mileage - v.lastPmMileage;
+        const distanceSincePm = this._pmDistanceKm(v);
         if (distanceSincePm >= 10000) {
             badges.push(`
                 <div class="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs flex items-center gap-1.5 font-bold animate-pulse">
@@ -368,13 +395,17 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
             `);
         }
 
-        // 3. Tax Expiration Calculation
+// 3. Tax Expiration Calculation
         if (v.taxExpiry) {
-            const expDate = new Date(v.taxExpiry);
-            const today = new Date();
-            const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-
-if (diffDays < 0) {
+            const diffDays = this._taxDaysLeft(v);
+            if (diffDays === null) {
+                badges.push(`
+                    <div class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-calendar-xmark text-pea-gold"></i>
+                        <span>วันหมดอายุภาษี: ${v.taxExpiry} (โปรดตรวจสอบรูปแบบ ควรเป็น YYYY-MM-DD)</span>
+                    </div>
+                `);
+            } else if (diffDays < 0) {
                 badges.push(`
                     <div class="px-2.5 py-1 rounded-lg bg-red-600/30 border border-red-500 text-red-300 text-xs flex items-center gap-1.5 font-bold">
                         <i class="fa-solid fa-gavel text-red-400"></i>
@@ -603,22 +634,62 @@ if (diffDays < 0) {
         `;
     }
 
-    handlePhotoUpload(event) {
+handlePhotoUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
+
+        // กัน localStorage quota ล้น (รูป DSLR 8MB+ เป็น base64 จะกินโควต้า ~5MB จน sync ค้าง)
+        const MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB ต้นฉบับ
+        if (file.size > MAX_PHOTO_BYTES) {
+            notifier.showToast('รูปใหญ่เกินไป', 'โปรดเลือกรูปไม่เกิน 3 MB (กล้องมือถือปกติกดส่งเลย ไม่ต้องเลือกงานถ่าย)', 'WARNING');
+            event.target.value = '';
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = (e) => {
             const dataUrl = e.target.result;
-            const preview = document.getElementById('modal-photo-preview');
-            if (preview) {
-                preview.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-contain" alt="ภาพชำรุด">`;
-                preview.dataset.photoUrl = dataUrl;
-            }
-            const statusText = document.getElementById('photo-status-text');
-            if (statusText) statusText.innerText = '✅ อัปโหลดภาพเรียบร้อย';
+            this._compressPhotoForStorage(dataUrl).then(finalUrl => {
+                const preview = document.getElementById('modal-photo-preview');
+                if (preview) {
+                    preview.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-contain" alt="ภาพชำรุด">`;
+                    preview.dataset.photoUrl = finalUrl;
+                }
+                const statusText = document.getElementById('photo-status-text');
+                if (statusText) statusText.innerText = '✅ อัปโหลดภาพเรียบร้อย (บีบอัดแล้วเพื่อประหยัดพื้นที่)';
+            });
         };
         reader.readAsDataURL(file);
+    }
+
+    // บีบอัดรูปเป็น JPEG 900px ไล่คุณภาพจนได้ ~250KB หรือต่ำกว่า (กัน localStorage + คิวซิงค์อืด)
+    _compressPhotoForStorage(dataUrl) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const MAX_W = 900;
+                    const scale = Math.min(1, MAX_W / img.width);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(img.width * scale));
+                    canvas.height = Math.max(1, Math.round(img.height * scale));
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    let quality = 0.72;
+                    let out = canvas.toDataURL('image/jpeg', quality);
+                    // ลดคุณภาพลงเรื่อยๆ จนกว่าจะเล็กพอ (กันรูปภาพพื้นเรียบภาพใหญ่)
+                    while (out.length > 260 * 1024 && quality > 0.3) {
+                        quality -= 0.1;
+                        out = canvas.toDataURL('image/jpeg', quality);
+                    }
+                    resolve(out.length < dataUrl.length ? out : dataUrl);
+                } catch (err) {
+                    resolve(dataUrl);
+                }
+            };
+            img.onerror = () => resolve(dataUrl);
+            img.src = dataUrl;
+        });
     }
 
     applyPresetPhoto(itemId) {
@@ -1162,20 +1233,29 @@ if (diffDays < 0) {
         `;
     }
 
-    handleMechanicPhotoUpload(event, itemIdx) {
+handleMechanicPhotoUpload(event, itemIdx) {
         const file = event.target.files[0];
         if (!file) return;
+
+        const MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB ต้นฉบับ
+        if (file.size > MAX_PHOTO_BYTES) {
+            notifier.showToast('รูปใหญ่เกินไป', 'โปรดเลือกรูปไม่เกิน 3 MB', 'WARNING');
+            event.target.value = '';
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = (e) => {
             const dataUrl = e.target.result;
-            const preview = document.getElementById(`mech-preview-${itemIdx}`);
-            if (preview) {
-                preview.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-contain">`;
-                preview.dataset.photo = dataUrl;
-            }
-            const status = document.getElementById(`mech-photo-status-${itemIdx}`);
-            if (status) status.innerText = '✅ แนบภาพสำเร็จ';
+            this._compressPhotoForStorage(dataUrl).then(finalUrl => {
+                const preview = document.getElementById(`mech-preview-${itemIdx}`);
+                if (preview) {
+                    preview.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-contain">`;
+                    preview.dataset.photo = finalUrl;
+                }
+                const status = document.getElementById(`mech-photo-status-${itemIdx}`);
+                if (status) status.innerText = '✅ แนบภาพสำเร็จ (บีบอัดแล้ว)';
+            });
         };
         reader.readAsDataURL(file);
     }
@@ -1266,14 +1346,12 @@ if (diffDays < 0) {
         const readyCount = vehicles.filter(v => v.status === 'READY').length;
         const warningCount = vehicles.filter(v => v.status === 'WARNING').length;
         const criticalCount = vehicles.filter(v => v.status === 'CRITICAL').length;
-        const pmDueCount = vehicles.filter(v => (v.mileage - v.lastPmMileage) >= 10000).length;
+        const pmDueCount = vehicles.filter(v => this._pmDistanceKm(v) >= 10000).length;
         
-        const now = new Date();
-        const taxDueCount = vehicles.filter(v => {
+const taxDueCount = vehicles.filter(v => {
             if (!v.taxExpiry) return false;
-            const exp = new Date(v.taxExpiry);
-            const diff = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
-            return diff <= 30;
+            const diff = this._taxDaysLeft(v);
+            return diff !== null && diff <= 30;
         }).length;
 
         // Render Stat Numbers
@@ -1345,14 +1423,13 @@ if (diffDays < 0) {
             if (this.fleetFilter === 'WARNING') filtered = vehicles.filter(v => v.status === 'WARNING');
             if (this.fleetFilter === 'CRITICAL') filtered = vehicles.filter(v => v.status === 'CRITICAL');
 
-            tableBody.innerHTML = filtered.map(v => {
-                const distanceSincePm = v.mileage - v.lastPmMileage;
+tableBody.innerHTML = filtered.map(v => {
+                const distanceSincePm = this._pmDistanceKm(v);
                 const isPmDue = distanceSincePm >= 10000;
 
-                const exp = v.taxExpiry ? new Date(v.taxExpiry) : null;
-                const diff = exp ? Math.ceil((exp - now) / (1000 * 60 * 60 * 24)) : 999;
-                const isTaxCritical = diff < 0;
-                const isTaxWarning = diff >= 0 && diff <= 30;
+const diff = this._taxDaysLeft(v) === null ? 999 : this._taxDaysLeft(v);
+                const isTaxCritical = diff !== 999 && diff < 0;
+                const isTaxWarning = diff !== 999 && diff >= 0 && diff <= 30;
 
                 let statusBadge = '';
                 const activeMission = db.getActiveMissionByVehicleId(v.id);
@@ -1377,7 +1454,7 @@ if (diffDays < 0) {
                             <div class="text-[10px] text-slate-400">${v.department}</div>
                         </td>
 <td class="py-3 px-3">
-                            <div class="font-mono text-slate-200 font-bold">${v.mileage.toLocaleString()} กม.</div>
+                            <div class="font-mono text-slate-200 font-bold">${(Number(v.mileage) || 0).toLocaleString()} กม.</div>
                             ${isPmDue ? `<div class="flex items-center gap-2 mt-1"><span class="text-[10px] text-amber-400 font-bold"><i class="fa-solid fa-wrench"></i> ถึงรอบ PM 10,000 กม.</span><button onclick="app.markPmDone('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ PM</button></div>` : `<span class="text-[10px] text-slate-500">อีก ${(10000 - distanceSincePm).toLocaleString()} กม.</span>`}
                         </td>
 <td class="py-3 px-3">
@@ -3558,7 +3635,7 @@ saveAlertEmails() {
                 result.pm.html += `
                     <div style="margin-bottom:15px; padding:15px; background-color:#fff5f5; border-left:5px solid #dc2626; border-radius:4px;">
                         <h3 style="margin:0 0 10px 0; color:#dc2626;">🚨 [ถึงกำหนด PM] ทะเบียน: ${vehicle.plate}</h3>
-                        <p style="margin:0; font-size:14px;"><strong>เลขไมล์ปัจจุบัน:</strong> ${vehicle.mileage.toLocaleString()} กม.</p>
+                        <p style="margin:0; font-size:14px;"><strong>เลขไมล์ปัจจุบัน:</strong> ${(Number(vehicle.mileage) || 0).toLocaleString()} กม.</p>
                         <p style="margin:0; font-size:14px;"><strong>ระยะวิ่งตั้งแต่ PM รอบก่อน:</strong> ${distanceSinceLastPM.toLocaleString()} กม.</p>
                         <p style="margin:5px 0 0 0; font-size:14px; color:#b91c1c;"><em>กรุณานำรถเข้าศูนย์บริการเพื่อบำรุงรักษาตามระยะ</em></p>
                     </div>
@@ -3630,22 +3707,28 @@ saveAlertEmails() {
         `;
     }
 
-    _sendAlertEmail(subject, body, recipients, onSuccess) {
+    _sendAlertEmail(subject, body, recipients, cycleClaims) {
         if (typeof googleSheet === 'undefined' || typeof db === 'undefined') return;
         const list = recipients && recipients.length > 0 ? recipients : db.getAlertRecipients();
         if (list.length === 0) return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
+
+        // "อ้างสิทธิ์" (claim) วงรอบก่อนส่งจริง — กัน race condition เมื่อเปิด 2 แท็บพร้อมกัน
+        // TS: เขียน lock ก่อน แล้วค่อยส่ง; ถ้าส่งไม่สำเร็จจึงยกเลิก เพื่อไม่ให้อีเมลซ้ำจากอีกแท็บ
+        const claims = Array.isArray(cycleClaims) ? cycleClaims : [];
+        claims.forEach(c => { if (c && c.key) localStorage.setItem(c.key, String(c.value)); });
 
         googleSheet.sendEmailAlert(list, subject, body).then(res => {
             if (res && res.success) {
                 console.log(`[Email Alert] Sent to ${list.join(', ')}`);
                 notifier.showToast('แจ้งเตือนอัตโนมัติสำเร็จ', `ส่งอีเมลไปยัง ${list.length} คนแล้ว (${subject})`, 'SUCCESS');
-                if (typeof onSuccess === 'function') onSuccess();
             } else {
                 console.warn('[Email Alert] Failed to send', res);
+                claims.forEach(c => { if (c && c.key) localStorage.removeItem(c.key); });
                 notifier.showToast('การส่งอีเมลล้มเหลว', 'อาจเกิดจากสิทธิ์การเข้าถึง Google Apps Script โปรดตรวจสอบการ Deploy', 'WARNING');
             }
         }).catch(e => {
             console.warn('[Email Alert] Error', e);
+            claims.forEach(c => { if (c && c.key) localStorage.removeItem(c.key); });
             notifier.showToast('เชื่อมต่ออีเมลขัดข้อง', 'โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ตหรือ URL', 'ERROR');
         });
     }
@@ -3657,11 +3740,11 @@ saveAlertEmails() {
         const res = this._buildVehicleAlerts(vehicle);
         if (res.pm.count > 0) {
             const subject = `[PEA Fleet Alert] ถึงกำหนด PM 10,000 กม. ทะเบียน ${vehicle.plate}`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.pm.html, 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), () => this._markPmCycleAlerted(vehicle));
+            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.pm.html, 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), [{ key: `pea_alert_pm_cycle_${vehicle.id}`, value: vehicle.lastPmMileage || 0 }]);
         }
         if (res.tax.count > 0) {
             const subject = `[PEA Fleet Alert] ภาษีจะหมดอายุ ≤ 7 วัน ทะเบียน ${vehicle.plate}`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.tax.html, 'หัวหน้างาน'), db.getTaxRecipients(), () => this._markTaxCycleAlerted(vehicle));
+            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.tax.html, 'หัวหน้างาน'), db.getTaxRecipients(), [{ key: `pea_alert_tax_cycle_${vehicle.id}`, value: vehicle.taxExpiry }]);
         }
     }
 
@@ -3686,22 +3769,14 @@ saveAlertEmails() {
 
         if (pmCars.length > 0) {
             const subject = `[PEA Fleet Alert] พบ ${pmCars.length} คัน ถึงกำหนด PM 10,000 กม.`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(pmCars.join(', '), pmHTML.join(''), 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), () => {
-                vehicles.forEach(v => {
-                    const r = this._buildVehicleAlerts(v);
-                    if (r.pm.count > 0) this._markPmCycleAlerted(v);
-                });
-            });
+            const pmClaims = vehicles.filter(v => this._buildVehicleAlerts(v).pm.count > 0).map(v => ({ key: `pea_alert_pm_cycle_${v.id}`, value: v.lastPmMileage || 0 }));
+            this._sendAlertEmail(subject, this._composeAlertEmail(pmCars.join(', '), pmHTML.join(''), 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), pmClaims);
         }
 
         if (taxCars.length > 0) {
             const subject = `[PEA Fleet Alert] พบ ${taxCars.length} คัน ภาษีจะหมดอายุ ≤ 7 วัน หรือขาดต่อ`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(taxCars.join(', '), taxHTML.join(''), 'หัวหน้างาน'), db.getTaxRecipients(), () => {
-                vehicles.forEach(v => {
-                    const r = this._buildVehicleAlerts(v);
-                    if (r.tax.count > 0) this._markTaxCycleAlerted(v);
-                });
-            });
+            const taxClaims = vehicles.filter(v => this._buildVehicleAlerts(v).tax.count > 0).map(v => ({ key: `pea_alert_tax_cycle_${v.id}`, value: v.taxExpiry }));
+            this._sendAlertEmail(subject, this._composeAlertEmail(taxCars.join(', '), taxHTML.join(''), 'หัวหน้างาน'), db.getTaxRecipients(), taxClaims);
         }
     }
 

@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.22 (Cache Busting)
+ * Build Version: v0.7.23 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.22';
+const APP_BUILD_VERSION = 'v0.7.23';
 
 class PEADatabase {
     constructor() {
@@ -251,6 +251,11 @@ class PEADatabase {
         } else {
             vehicles.push(vehicle);
         }
+        // แต้มเวลา ISO เสมอเมื่อเขียนจากเครื่อง — ใช้เป็นหลักตัดสิน "ใครใหม่กว่า" ในการ merge กับ Google Sheets
+        // (เดิม saveVehicle ไม่ตั้ง updatedAt → merge เปรียบเทียบกับ lastInspectDate รูปแบบ ไทย/ต่าง format ปะปน ล็อกผิดทาง)
+        if (!vehicle.updatedAt || typeof vehicle.updatedAt !== 'string') {
+            vehicle.updatedAt = new Date().toISOString();
+        }
         localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
         this.enqueueSync('UPDATE_VEHICLE', vehicle);
     }
@@ -397,6 +402,50 @@ class PEADatabase {
         }
     }
 
+    // เขียน localStorage แบบกันโค้ตาล้น: ถ้าเขียนไม่ได้ (QuotaExceededError) ให้ลบรูป base64 หนักๆ ออกแล้วลองใหม่
+    // เพื่อไม่ให้ flow การทำงานหลัก (บันทึก/ซิงค์) ตายเงียบเพราะรูปภาพโอก
+    _setItemQuotaSafe(key, value, stripPhotos) {
+        try {
+            localStorage.setItem(key, value);
+            return true;
+        } catch (err) {
+            if (err && (err.name === 'QuotaExceededError' || err.message && err.message.includes('exceeded'))) {
+                if (stripPhotos) {
+                    try {
+                        let data = JSON.parse(value);
+                        const scrub = (arr, fields) => {
+                            if (!Array.isArray(arr)) return;
+                            arr.forEach(entry => {
+                                fields.forEach(f => {
+                                    if (entry && entry[f] && /^data:image\//.test(String(entry[f]))) entry[f] = null;
+                                });
+                                if (entry && Array.isArray(entry.items)) {
+                                    entry.items.forEach(it => {
+                                        if (it && it.photoBefore && /^data:image\//.test(String(it.photoBefore))) it.photoBefore = null;
+                                        if (it && it.photoAfter && /^data:image\//.test(String(it.photoAfter))) it.photoAfter = null;
+                                    });
+                                }
+                            });
+                            return;
+                        };
+                        if (key === this.STORAGE_KEYS.REPAIR_TICKETS) scrub(data, ['photoBefore', 'photoAfter']);
+                        if (key === this.STORAGE_KEYS.SYNC_QUEUE) scrub(data, ['photo']);
+                        localStorage.setItem(key, JSON.stringify(data));
+                        console.warn('[PEA DB] พื้นที่จัดเก็บเต็ม: ตัดภาพ base64 ออกจากข้อมูลเพื่อให้บันทึกต่อได้ (เหตุการณ์สำคัญ: โปรดอัปโหลดภาพไปเก็บที่อื่น)');
+                        return true;
+                    } catch (e2) {
+                        console.warn('[PEA DB] โค้ตาล้นและยังลดขนาดต่อไม่ได้:', e2 && e2.message);
+                        return false;
+                    }
+                }
+                console.warn('[PEA DB] พื้นที่จัดเก็บเต็ม:', err.message);
+                return false;
+            }
+            console.warn('[PEA DB] เขียน localStorage ล้มเหลว:', err && err.message ? err.message : err);
+            return false;
+        }
+    }
+
     saveRepairTicket(ticket) {
         const tickets = this.getRepairTickets();
         const index = tickets.findIndex(t => t.ticketId === ticket.ticketId);
@@ -405,8 +454,8 @@ class PEADatabase {
         } else {
             tickets.unshift(ticket);
         }
-        localStorage.setItem(this.STORAGE_KEYS.REPAIR_TICKETS, JSON.stringify(tickets));
-        this.enqueueSync('SAVE_TICKET', ticket);
+        this._setItemQuotaSafe(this.STORAGE_KEYS.REPAIR_TICKETS, JSON.stringify(tickets), true);
+        this.enqueueSync('SAVE_TICKET', ticket, true);
     }
 
     // =========================================================================
@@ -446,7 +495,7 @@ class PEADatabase {
         }
     }
 
-    enqueueSync(action, payload) {
+    enqueueSync(action, payload, allowPhotoStrip) {
         if (!this.isOnline()) {
             // ไม่มีอินเทอร์เน็ต -> เก็บเข้าคิวสำหรับซิงค์ทีหลัง
             const queue = this.getSyncQueue();
@@ -456,7 +505,7 @@ class PEADatabase {
                 payload,
                 enqueuedAt: new Date().toISOString()
             });
-            localStorage.setItem(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue));
+            this._setItemQuotaSafe(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue), !!allowPhotoStrip);
             window.dispatchEvent(new CustomEvent('pea-sync-queue-updated', { detail: { queueLength: queue.length } }));
         } else {
             // Already online: ส่งขึ้น Google Sheets จริงทันที (ถ้าตั้ง URL ไว้)
@@ -470,7 +519,7 @@ class PEADatabase {
                         payload,
                         enqueuedAt: new Date().toISOString()
                     });
-                    localStorage.setItem(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue));
+                    this._setItemQuotaSafe(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue), !!allowPhotoStrip);
                     window.dispatchEvent(new CustomEvent('pea-sync-queue-updated', { detail: { queueLength: queue.length } }));
                     console.warn(`[PEA DB] ส่ง GSheet ไม่สำเร็จ (${result ? (result.reason || result.error || 'error') : 'unknown'}) เก็บเข้าคิวรอซิงค์:`, action);
                 }
@@ -529,23 +578,39 @@ class PEADatabase {
         const queue = this.getSyncQueue();
         if (queue.length === 0) return { success: true, count: 0, message: 'ไม่มีข้อมูลค้างซิงค์ ข้อมูลเป็นปัจจุบันแล้ว' };
 
+        // Max ลองซิงค์ต่อรายการกัน "คิวเป็นพิษ" (payload ที่ส่งไม่ได้ทุกครั้งจะได้ไม่ติดค้างตลอดการใช้งาน)
+        const MAX_ATTEMPTS = 10;
+
         // Flush ทีละรายการ: ส่งได้สำเร็จ => ตัดออก, ส่งไม่ได้ (offline/error) => คงไว้ในคิว
         const remaining = [];
         let successCount = 0;
+        let droppedCount = 0;
         for (const item of queue) {
             try {
                 const res = await this.syncToGoogleSheets(item.action, item.payload);
                 if (res && (res.success === true || res.ok === true)) {
                     successCount++;
-                } else {
-                    remaining.push(item);
+                    continue;
                 }
+                const attempts = Number(item.syncAttempts || 0) + 1;
+                if (attempts > MAX_ATTEMPTS) {
+                    droppedCount++;
+                    console.warn(`[PEA DB] ปล่อยคิวที่ซิงค์ไม่ได้ครบ ${MAX_ATTEMPTS} ครั้ง (id=${item.queueId} action=${item.action}) — มันอาจมี payload ที่ GAS ปฏิเสธตลอด โปรดตรวจสอบข้อมูล`, item.payload);
+                    continue;
+                }
+                remaining.push(Object.assign({}, item, { syncAttempts: attempts }));
             } catch (e) {
-                remaining.push(item);
+                const attempts = Number(item.syncAttempts || 0) + 1;
+                if (attempts > MAX_ATTEMPTS) {
+                    droppedCount++;
+                    console.warn(`[PEA DB] ปล่อยคิวที่เกิด error ซ้ำ ${MAX_ATTEMPTS} ครั้ง (id=${item.queueId} action=${item.action})`, e);
+                    continue;
+                }
+                remaining.push(Object.assign({}, item, { syncAttempts: attempts }));
             }
         }
 
-        localStorage.setItem(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(remaining));
+        this._setItemQuotaSafe(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(remaining), true);
         window.dispatchEvent(new CustomEvent('pea-sync-queue-updated', { detail: { queueLength: remaining.length } }));
 
         const totalToSync = queue.length;
@@ -554,14 +619,16 @@ class PEADatabase {
             return {
                 success: true,
                 count: successCount,
-                message: `ซิงค์ข้อมูล ${successCount} รายการขึ้น Google Sheets สำเร็จเรียบร้อย!`
+                dropped: droppedCount,
+                message: `ซิงค์ข้อมูล ${successCount} รายการขึ้น Google Sheets สำเร็จเรียบร้อย!${droppedCount ? ` (ปล่อยคิวเสีย ${droppedCount} รายการ)` : ''}`
             };
         }
         return {
             success: false,
             count: successCount,
             failed,
-            message: `ซิงค์สำเร็จ ${successCount} รายการ, ยังมี ${failed} รายการค้าง (จะลองใหม่ในครั้งถัดไป)`
+            dropped: droppedCount,
+            message: `ซิงค์สำเร็จ ${successCount} รายการ, ยังมี ${failed} รายการค้าง (จะลองใหม่ในครั้งถัดไป)${droppedCount ? `, ปล่อยคิวเสีย ${droppedCount} รายการ` : ''}`
         };
     }
 

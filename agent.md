@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.22  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.23  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -280,7 +280,7 @@
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.22)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.23)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
@@ -318,7 +318,15 @@
   - **ต่อภาษี:** ใช้ฟอร์มแก้รถ (ตั้ง `taxExpiry` ใหม่) — ค่าเปลี่ยน = รู้ว่าต่อแล้ว รอบถัดไป (ใกล้ 7 วัน) จะแจ้งอีก
   - Fleet scan ตอนเปิดแอป ส่งแยก 2 ฉบับ (ฉบับ PM + ฉบับภาษี) แทนฉบับรวม |
 | v0.7.22 | **ปุ่ม "เคลียร์ภาษี" (`markTaxRenewed`)** — สมมาตรกับเคลียร์ PM: ถามวันหมดอายุภาษีใหม่ (YYYY-MM-DD, ค่าเริ่มต้น = +1 ปี) → ตั้ง `taxExpiry` + ลบ lock `pea_alert_tax_cycle_{id}` + log `TAX_RENEWED` + ซิงก์ขึ้นชีต; เพิ่มปุ่มใน badge หน้ารถ (ขาด+ใกล้หมด) และในตารางสรุปตามตาราง; และแก้ HTML badge PM ผิดรูป (ปีกกาซ้ำซ้อน) — วิธีที่ถูกสำหรับ "ต่อภาษี" แต่ถ้าต้องการแค่เลื่อนการเตือนแบบไม่แก้ข้อมูลจริง ยังใช้ฟอร์มแก้รถได้ |
-| v0.7.23 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
+| v0.7.23 | **Audit ทั้งระบบ — แก้ 6 จุดเสี่ยงใหญ่ (ตามเทสต์รอบนี้ + การตรวจ code):**
+  - **email race (HIGH):** ~~lock หลังส่งสำเร็จ~~ → **lock ก่อนส่ง (claim-before-send)** แล้วปลดเมื่อ fail — ปิดช่องเปิด 2 แท็บพร้อมกันส่งซ้ำ 2 ฉบับ
+  - **NaN PM (HIGH):** เพิ่ม `_pmDistanceKm()` guard — date เก่าที่ไม่มี `lastPmMileage` จะไม่โชว์ "อีก NaN กม." และไม่โผล่เข้า PM due หลอก
+  - **quota รูป (HIGH):** บีบอัดรูป `_compressPhotoForStorage()` (JPEG ≤ 900px ~250KB) + จำกัดไฟล์ ≤ 3MB + `_setItemQuotaSafe()` ตัด base64 ออกเมื่อ localStorage เต็ม (แทนที่ตายเงียบกลาง "บันทึก")
+  - **คิวเป็นพิษ (MEDIUM):** `processSyncQueue` จำกัด retry ≤ 10 ครั้ง/รายการ แล้วปล่อยคิว (เดิมติดค้างตลอดถ้า payload ที่ GAS ปฏิเสธซ้ำ)
+  - **เวลา tax (MEDIUM):** `new Date('YYYY-MM-DD')` แปลว่า UTC → เพิ่ม `_taxExpiryDate()`/`_taxDaysLeft()` แปล local midnight เพื่อเลี่ยง "อีก -0 วัน"/off-by-one ใน UTC+7
+  - **merge ข้อมูลถอยหลัง (HIGH):** `saveVehicle` แต้ม `updatedAt` = ISO เพิ่ม `parseTsMs()` (รองรับ ISO + ไทย d/m/yyyyพ.ศ.) และ merge เก็บ **ทุกฟิลด์** local เมื่อ local ใหม่กว่า (เดิมเก็บแค่ 3 ฟิลด์ taxExpiry/lastPmMileage ถูก remote เก่าๆ ทับได้)
+  - การตรวจ: `node --check` 8/8 + เทสต์ auto 40/40 ผ่าน |
+| v0.7.24 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
 - **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**
@@ -339,16 +347,11 @@
 - **กล่องข้อความหลัก Gmail:** ส่งผ่าน GAAS จากบัญชีผู้ใช้เอง + เนื้อหา HTML เรียบง่าย → ควรเข้า Primary inbox (ยังต้องยืนยันจริงในการทดสอบ)
 - **UI:** ตั้งค่า Google Sheets modal → หัวข้อ **"4. อีเมลสำหรับรับแจ้งเตือน"** → 2 ช่อง (หัวหน้างาน / ช่างเครื่องยนต์) + ปุ่ม **บันทึกอีเมล** + ปุ่ม **ส่งอีเมลทดสอบ** (`sendTestAlertEmail()`)
 
-### 8.4 งานที่ค้าง/ต้องทำต่อพรุ่งนี้ (เรียงตามลำดับ) ★★★
-- [ ] **① Re-Deploy GAS เวอร์ชันล่าสุด (สำคัญ — GAS ที่ deploy อยู่ตอนนี้ยังเป็น v0.7.19 ที่อีเมลยังพัง!):**
-  - เปิด Google Sheet → Extensions > Apps Script → ลบโค้ดเก่า → วาง `APPS_SCRIPT_code_ready_to_paste.js` (ปัจจุบัน **449 บรรทัด**) ทั้งหมด → Save
-  - Deploy > **Manage deployments > แก้ deployment เดิม > Version = New version** (เพื่อให้ URL เดิมใช้งานได้ ไม่ต้องเปลี่ยนในระบบ!) → ตั้ง "Execute as Me" + "Anyone" → Deploy
-  - ไฟล์นี้ประกอบด้วย: **`toList.join(', ')` (v0.7.20 แก้ bug array)** + migrateDepartureTab/ชื่อ tab ใหม่ (v0.7.14) + doGet READ_ALL ทั้งหมด
-  - ⚠️ ถ้า URL เปลี่ยน (สร้าง deployment ใหม่แทนการแก้เก่า) → ต้องแก้ `DEFAULT_WEBAPP_URL` ใน js/googleSheetService.js + bump version + push ใหม่
-- [ ] **② ทดสอบ Email จริง (เป้าหมายหลัก):**
+- [x] ~~**① Re-Deploy GAS เวอร์ชันล่าสุด**~~ → **ยืนยันแล้วผ่าน live test (2026-09-21):** POST SEND_EMAIL → `success:true` → GAS บนเซิร์ฟเวอร์เป็นโค้ดใหม่แล้ว — ไม่ต้อง deploy ซ้ำ
+- [ ] **② ทดสอบ Email จริง (เป้าหมายหลัก — GAS พร้อมส่งแล้ว เข้า Primary ได้แล้ว):**
   1. เปิด `https://book-pon.github.io/pea-smart-vehicle/` กด **Ctrl+F5** (ล้างแคช)
   2. ปุ่ม **Google Sheet** (มุมขวาบน) → หัวข้อ **4** → กรอก `pon60562@gmail.com` ทั้ง 2 ช่อง (หัวหน้า + ช่าง) → **บันทึกอีเมล** → **ส่งอีเมลทดสอบ**
-  3. เช็ค Gmail → "ส่งอีเมลทดสอบ" ต้องเข้า **Primary** 1 ฉบับจริง (ก่อนนี้ v0.7.17-19 ไม่เคยส่งสำเร็จ เพราะ bug array)
+  3. เช็ค Gmail → "ส่งอีเมลทดสอบ" ต้องเข้า **Primary** 1 ฉบับจริง (ยืนยันแล้วว่า GAS ส่งได้ — v0.7.17-19 อดีตเคยพังเพราะ bug array)
   4. ถ้าเข้า tab อื่น → ทำให้ "สะอาด" ขึ้น (ลด HTML/ใส่ text/plain) เพื่อดันไป Primary
 - [ ] **③ ทดสอบเงื่อนไขจริง (รอบละครั้ง):** รีเฟรชหน้า (Fleet scan ตอนเปิด) → ควรได้ **2 ฉบับแยก** (PM: หัวหน้า+ช่าง / ภาษี: หัวหน้า) สำหรับ 3 คันจริง (กพ-4501, 2ขข-1102, 82-8820); รีเฟรชซ้ำหลายๆ ครั้ง → **ต้องไม่ส่งซ้ำ**; กด "เคลียร์ PM แล้ว" ที่ กพ-4501/2ขข-1102 → บันทึก/รีเฟรช → ไม่มี PM ซ้ำจนกว่าจะครบรอบ 10,000 กม. ใหม่
 - [ ] **④ (ถ้าไม่สะดวกเทสต์อีเมลจริง) ตัวเลือก:** เปิด modal แล้วตรวจ log console (F12) — ค่าล็อก cycle ควรถูกตั้งครั้งเดียวแล้วคงอยู่
@@ -356,13 +359,13 @@
 - [ ] **⑥ (ความสวยงาม UI) PM_DUE:** ใช้ปุ่ม "เคลียร์ PM แล้ว" (ทำแล้ว v0.7.21) + NaN guard ให้ผู้ใช้ที่ข้อมูล `lastPmMileage` ยังเป็น undefined
 
 ### 8.5 วิธี Deploy/อัปเดตเวอร์ชัน → GitHub Pages (ขั้นตอนบังคับเมื่อแก้โค้ด)
-1. Bump version: แทนที่เวอร์ชันเดิม เช่น `v0.7.20` → `v0.7.21` ในไฟล์: `js/googleSheetService.js`, `js/db.js`, `js/app.js`, `js/reportGenerator.js`, `js/server.js`, `index.html`, `เปิดใช้งานระบบ.bat`, `เปิดใช้โหมด LAN.bat` (`css/main.css` ไม่มีคำว่าเวอร์ชัน — ข้ามได้) (เฉพาะไฟล์ที่เจอคำว่าเวอร์ชันเดิม)
+1. Bump version: แทนที่เวอร์ชันเดิม เช่น `v0.7.22` → `v0.7.23` ในไฟล์: `js/googleSheetService.js`, `js/db.js`, `js/app.js`, `js/reportGenerator.js`, `js/server.js`, `index.html`, `เปิดใช้งานระบบ.bat`, `เปิดใช้โหมด LAN.bat` (`css/main.css` ไม่มีคำว่าเวอร์ชัน — ข้ามได้) (เฉพาะไฟล์ที่เจอคำว่าเวอร์ชันเดิม)
 2. ตรวจ syntax: `node --check` ครบทุกไฟล์ JS (ผ่านหมด = OK) — รวม `APPS_SCRIPT_code_ready_to_paste.js` ถ้า regenerate แล้ว
 3. ถ้าแก้ template GAS ใน googleSheetService.js → รัน `node extract_apps_script.js` เพื่อสร้าง `APPS_SCRIPT_code_ready_to_paste.js` ใหม่
 4. `git add -A` → commit (ตั้ง user.name/user.email = BooK-PON) → `git push origin master` (branch = master!)
-5. รอ GitHub Pages build ~60-90 วิ แล้วเช็ค `https://book-pon.github.io/pea-smart-vehicle/js/app.js?v=v0.7.21`
+5. รอ GitHub Pages build ~60-90 วิ แล้วเช็ค `https://book-pon.github.io/pea-smart-vehicle/js/app.js?v=v0.7.23`
 6. เตือนผู้ใช้ **Ctrl+F5**
-7. ถ้ามีการส่งอีเมลจริงโดยใช้ GAS → เตือนผู้ใช้ **Re-deploy GAS** (จัดการ deployment เดิมแบบ New version) ด้วย `APPS_SCRIPT_code_ready_to_paste.js` ใหม่ — โค้ดเก่าที่ deploy อยู่บนเซิร์ฟเวอร์จะถูกใช้จนกว่าจะ deploy ใหม่
+7. ถ้ามีการส่งอีเมลจริงโดยใช้ GAS → เตือนผู้ใช้ **Re-deploy GAS** (จัดการ deployment เดิมแบบ New version) ด้วย `APPS_SCRIPT_code_ready_to_paste.js` ใหม่ — โค้ดเก่าที่ deploy อยู่บนเซิร์ฟเวอร์จะถูกใช้จนกว่าจะ deploy ใหม่ (ล่าสุดยืนยันแล้วว่า GAS เป็นโค้ดใหม่พร้อมใช้)
 
 ### 8.6 เครื่องมือ/ไฟล์สำคัญ
 - `js/googleSheetService.js` — template GAS (`PEA_GOOGLE_APPS_SCRIPT_CODE`) + readSnapshot/readSnapshotWithRetry + SEND_EMAIL (`to` = string คั่น `,`) + DEFAULT_WEBAPP_URL
@@ -374,12 +377,55 @@
 - `.gitignore` — ยกเว้น backup (`js/*_backup_working_*.js`), server.js, *.bat, test/script ฯลฯ ไม่ขึ้น Pages
 - Backup เก่า: `js/db_backup_working_v0.7.8.js`, `js/googleSheetService_backup_working_v0.7.8.js`
 
-### 8.7 ส่วนที่ห้ามยุ่ง (ไม่ควรแก้เด็ดขาด)
-- โค้ดหลักอ่าน/เขียน GSheet: `VEHICLE`, `READ_ALL`, `INSPECTION`, `DEPARTURE`, `REPAIR_APPROVAL`, lock, sync queue — แก้ได้เฉพาะ block `SEND_EMAIL`
-- Logic เงื่อนไข PM/tax เดิม + aliasการกันสแปม (`_buildVehicleAlerts`)
-- ห้ามลบ key เดิม `pea_alert_emails` (fallback ยังใช้อยู่)
+### 8.7 ส่วนที่ต้องระวัง (ถ้าจะแก้ ต้องต่อ Due-diligence ก่อน)
+- โค้ดหลักอ่าน/เขียน GSheet: `VEHICLE`, `READ_ALL`, `INSPECTION`, `DEPARTURE`, `REPAIR_APPROVAL`, lock, sync queue — แก้ได้ต่อเมื่อรัน `node --check` + เทสต์ auto ผ่าน
+- Logic เงื่อนไข PM/tax + lock รอบละครั้ง: `_buildVehicleAlerts()`, `_markPmCycleAlerted()`, `_markTaxCycleAlerted()`, `_sendAlertEmail()` (ตอนนี้เป็น **claim-before-send** — ห้ามเปลี่ยนกลับเป็น mark-after-send เพราะจะเปิดช่อง email ซ้ำ)
+- ห้ามลบ key เดิม `pea_alert_emails` (fallback ยังใช้อยู่) + ห้ามลบ `parseTsMs`/`_setItemQuotaSafe`/`_taxDaysLeft` (guard ป้องกันจุดพังที่เจอใน v0.7.23)
 - อย่าเปลี่ยนชื่อ tab ชีตด้วยมือใน Sheet (ให้ `migrateDepartureTab()` จัดการอัตโนมัติ)
 - เปลี่ยน GAS URL ต้องทำผ่านการ bump version + push (ไม่ได้สอนให้แก้ใน settings อันเดียว)
+
+## 9. คู่มือ Troubleshooting / จุดเสี่ยงที่เจอแล้ว (อัปเดต 2026-09-21) ★
+> ใช้เป็น checklist เมื่อมีปัญหากลับมา: หาว่าอาการตรงกับข้อไหน แล้วทำตามวิธีตรวจ/แก้
+
+### 9.1 จุดเสี่ยงระดับ HIGH (โอกาสพังจริง ถ้าข้ามขั้นตอน)
+1. **อีเมลไม่ส่ง / ส่งซ้ำ**
+   - อาการ: นึกกดส่งทดสอบได้แต่อีเมลไม่เข้า Primary / ได้ 2 ฉบับซ้ำตอนเปิด 2 แท็บพร้อมกัน
+   - ตรวจ: คำตอบจาก live URL → `node test_live_email.mjs "<URL>"` (POST SEND_EMAIL): `success:true` = GAS ใหม่แล้ว
+   - แก้: ถ้า fail ให้ Re-deploy GAS ด้วย `APPS_SCRIPT_code_ready_to_paste.js` (จัดการ deployment เดิมแบบ New version, Anyone) — โค้ดฝั่งเซิร์ฟเวอร์จะไม่เปลี่ยนจนกว่าจะ deploy ใหม่
+   - คำเตือน: v0.7.23 ใช้ **lock ก่อนส่ง** (claim-before-send) เพื่อกัน race จาก 2 แท็บ; ถ้าเห็น email ซ้ำอีก แสดงว่ามี code เดิม `onSuccess` หลงเหลือ
+2. **ตาราง/ตัวเลขขึ้น "อีก NaN กม." หรือกองยานหาย**
+   - อาการ: badge PM ขึ้น "อีก NaN กม." หรือ tab สรุปเป็นตารางว่าง
+   - สาเหตุ: row ที่ไม่มี `lastPmMileage`/`mileage` (legacy หรืออิมพอร์ตขาดฟิลด์)
+   - แก้: ถูก guard แล้วด้วย `_pmDistanceKm()`/`(Number(x)||0)`; ถ้ายังเห็น → ตรวจ `normalizeVehicleRow` ให้ jsonFull ครบฟิลด์
+3. **ข้อมูลถูก "ย้อนหลัง" หลังกดโหลดจาก Google Sheet**
+   - อาการ: แก้ภาษี/เคลียร์ PM ไว้ แต่โหลดชีตแล้วค่ากลับ
+   - แก้: v0.7.23 merge เก็บทุกฟิลด์ local เมื่อ `updatedAt` local ใหม่กว่า (parse ผ่าน `parseTsMs`) + `saveVehicle` แต้ม `updatedAt=ISO` ทุกครั้ง
+   - ตรวจ: ต้องรันเทสต์ `merge local-newer` ผ่านเสมอเมื่อแตะ merge
+4. **แอป "แฮงเงียบ" ตอนบันทึก (localStorage เต็ม)**
+   - สาเหตุเดิม: รูป full-res เป็น base64 (8MB+) อัดโควต้า ~5MB → `QuotaExceededError` ตายกลาง `submitInspection`
+   - แก้: v0.7.23 บีบอัดรูป ≤ 900px/~250KB + จำกัดไฟล์ 3MB + `_setItemQuotaSafe` ตัดรูปออกเมื่อเต็ม (log console เตือน)
+   - ถ้ายังเต็ม: ไป DevTools → Application → Local Storage → ลบ key `pea_offline_sync_queue`/`pea_repair_tickets` ที่รูปเก่าๆ ค้าง
+
+### 9.2 จุดเสี่ยงระดับ MEDIUM / ข้อควรรู้
+5. **คิวซิงค์อืดขึ้นเรื่อยๆ (ที่เป็น "พิษ")**
+   - อาการ: กดซิงค์แล้ว count ล้มเหลว ถาวร
+   - แก้: v0.7.23 รอ retry ≤ 10 ครั้ง/รายการแล้วปล่อยคิว (log console แจ้ง); ถ้า payload ที่ GAS ปฏิเสธซ้ำ ให้ตรวจข้อมูลจริง
+6. **เวลาหมดอายุภาษีคลาด 1 วัน ("อีก -0 วัน")**
+   - ตัวการเดิม: `new Date('YYYY-MM-DD')` แปล่ง UTC → เคลื่อน 1 วันใน UTC+7
+   - แก้: ใช้ `_taxDaysLeft()` (parsed เป็น local midnight) ทุกจุดแล้ว ทั้ง badge/ตาราง/email
+7. **แถว `TEST-*` ค้างในชีต**
+   - ระบบกรองไม่นำเข้าลงเครื่องแล้ว แต่ไม่ลบในชีตให้ — ถ้าอยากล้าง ต้องลบแถวด้วยมือใน Sheet (ถึงตอนนี้มี 4 แถว: TEST-MUA2DAAN, TEST-MUA2DZO4, TEST-MUA3DI0Z, TEST-MUAP22VO)
+
+### 9.3 สถานะ "จริง" ที่ตรวจไว้ (2026-09-21 ตรวจผ่าน live URL)
+- READ_ALL: vehicles=8, employees=6, inspections=5, departures=3, repairs=0 — ฟิลด์ครบ, taxExpiry 格式ถูกทุกคัน, lastPmMileage ครบทุกคัน
+- **SEND_EMAIL POST: `success:true` ผ่าน live แล้ว** → GAS บนเซิร์ฟเวอร์ถูก Re-deploy เป็นโค้ดใหม่ (มี fix `toList.join(', ')`) แล้ว — ไม่ต้อง deploy ซ้ำอีก
+- RTT READ_ALL real: ~3.7-5.0 วิ/รอบ (ช้าเป็นปกติของ GAS; แอปออกแบบ offline-first ไว้รองรับ)
+- 3 คันเข้าเงื่อนไขอีเมลขณะนี้: กพ-4501, 2ขข-1102 (PM-DUE) และ 82-8820 (ภาษีขาด 24 วัน)
+
+### 9.4 วิธีเทสต์ตัวเองซ้ำ (ก่อน/หลังแก้)
+- `node --check` ครบ 8 ไฟล์: `js/*.js`, `server.js`, `APPS_SCRIPT_code_ready_to_paste.js`
+- เทสต์ auto 40 ข้อ: เซฟใน `C:\Users\pon60\AppData\Local\Temp\opencode\test_email_engine.mjs` → `node` รันแล้วต้อง 40/40 ผ่าน (ครอบคลุม recipients, cycle-lock, markPmDone/markTaxRenewed, email route, merge, parseTsMs, quota guard)
+- เทสต์ live read: `node "temp\opencode\test_live_readonly.mjs" "<URL>"` และ live email: `node "temp\opencode\test_live_email.mjs" "<URL>"`
 
 ### 8.8 อัปเดต v0.7.19 — ทำให้ตาราง Google Sheet ตรงกับข้อมูลจริง (2026-09-21)
 - **สิ่งที่แก้ในโค้ดแล้ว (ในเครื่อง):**
