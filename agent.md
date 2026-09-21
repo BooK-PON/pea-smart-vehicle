@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.30  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.31  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -280,15 +280,15 @@
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.30)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.31)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
   - **หมายเหตุ:** repo เป็น public + ไม่มีรหัสผ่าน (ตามที่ผู้ใช้ขอ "ให้ทุกคนใช้ได้") ถ้าต้องการจำกัดสิทธิ์ต้องเพิ่มระบบ Login ภายหลัง
 - **ฐานข้อมูลกลาง = Google Sheets** / แอปเป็นแบบ offline-first: เครื่องใคร = localStorage ของเครื่องนั้น แต่ข้อมูลที่บันทึก push ขึ้นชีตกลาง และปุ่ม "โหลดจาก Google Sheet" ดึงกลับมา
 - **GAS Web App URL ที่ฝังเป็นค่าเริ่มต้น (ผู้ใช้ไม่ต้องกรอก):**  
-  `https://script.google.com/macros/s/AKfycbwLoz2fsJtENGH-VFz4T9VozHGAvEXMR0PltRNGDtjC4XkUSXOvJR0092yJkKnZnynkRA/exec`  
-  อยู่ที่ `js/googleSheetService.js` → `this.DEFAULT_WEBAPP_URL` (ผู้ใช้สามารถเปลี่ยนเป็นของตัวเองได้ในเมนูตั้งค่า เก็บใน localStorage ต่อเครื่อง)
+  `https://script.google.com/macros/s/AKfycbzxMue9lJlaYuD9mrFMCuemLohyCJecvUGKVUtC9Sf-J42UmT8UK8VLTDDLdYN-8mey/exec`  
+  อยู่ที่ `js/googleSheetService.js` → `this.DEFAULT_WEBAPP_URL` (ผู้ใช้สามารถเปลี่ยนเป็นของตัวเองได้ในเมนูตั้งค่า เก็บใน localStorage ต่อเครื่อง) — **อัปเดต v0.7.31 เป็น URL ที่ผู้ใช้ redeploy มา (เทสต์ผ่าน GAS-v0.7.30)**
 
 ### 8.2 ไทม์ไลน์เวอร์ชันล่าสุด (สรุป)
 | เวอร์ชัน | สิ่งที่ทำ |
@@ -376,6 +376,8 @@
   - **#2 ขากลับปิดภารกิจแล้วแต่ master ไมล์ไม่เปลี่ยน (เครื่องอื่นเห็นเลขเก่า):** GAS `DEPARTURE_END` (และ INSPECTION ที่ปิดภารกิจ) **อัปเดตเลขไมล์ master ในสมุดรถไปด้วยในตัวเดียว** ผ่าน helper `updateVehicleMileageOnSheet()` (เขียนได้แค่ค่าสูงกว่า + อัปเดต jsonFull ด้วย) → ต่อให้ call `UPDATE_VEHICLE` แยกหลุดหาย Master ก็ได้ไมล์ล่าสุดจากขากลับเอง (GAS เดิมเคยถูกเครื่องโค้ดเก่าดันไมล์ให้ถอยได้ → master ค้างค่าเก่า เพราะ VEHICLE call แยกไม่ไป)
   - **#3 (ฝั่งแอป) ยกพื้นไมล์กันถอย:** `mergeVehiclesFromSnapshot(snapshotRows, localVehicles, allDepartures)` — นำ "endMileage สูงสุดเท่าที่เคยมี (เฉพาะภารกิจที่เสร็จแล้ว)" จากสมุดเข้า-ออกมาเป็นค่าขั้นต่ำของไมล์รถ → เครื่องที่ pull มาเห็นเลขไมล์ถูกต้องทันที และเมื่อมีการ save รถครั้งถัดไปจะ push ขึ้น master ให้กลับมาถูกถาวร
   - **การตรวจ:** `node --check` ผ่าน |
+| v0.7.31 | อัปเดต `DEFAULT_WEBAPP_URL` ใน `js/googleSheetService.js` เป็น **URL ที่ผู้ใช้ redeploy และเทสต์ผ่านแล้ว** (`AKfycbzxMue9lJla...` → GAS-v0.7.30) — เครื่องใหม่/เครื่องที่ยังไม่เคยตั้งค่า URL ต่อเครื่องจะใช้ค่าเริ่มต้นที่ถูกต้อง (ไม่ต้องกรอก URL เอง) |
+| v0.7.32 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
 - **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**

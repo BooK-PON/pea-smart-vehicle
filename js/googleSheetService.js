@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.30
+ * Build Version: v0.7.31
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -459,7 +459,7 @@ class PEAGoogleSheetService {
         this.STORAGE_KEY_URL = 'pea_google_sheet_webapp_url';
         // URL ฐานข้อมูล Google Sheets กลาง (ผู้ใช้ทุกคนเชื่อมต่อค่าเริ่มต้นนี้ กรณีต้องการชีตของตัวเอง
         // สามารถเข้าไปเปลี่ยนได้ในเมนูตั้งค่า โดยจะบันทึกลงเครื่องแต่ละเครื่อง)
-        this.DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwLoz2fsJtENGH-VFz4T9VozHGAvEXMR0PltRNGDtjC4XkUSXOvJR0092yJkKnZnynkRA/exec';
+        this.DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzxMue9lJlaYuD9mrFMCuemLohyCJecvUGKVUtC9Sf-J42UmT8UK8VLTDDLdYN-8mey/exec';
         this.webAppUrl = localStorage.getItem(this.STORAGE_KEY_URL) || this.DEFAULT_WEBAPP_URL;
     }
 
