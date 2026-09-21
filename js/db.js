@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.19 (Cache Busting)
+ * Build Version: v0.7.20 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.19';
+const APP_BUILD_VERSION = 'v0.7.20';
 
 class PEADatabase {
     constructor() {

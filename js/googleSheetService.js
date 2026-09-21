@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.19
+ * Build Version: v0.7.20
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -203,7 +203,7 @@ else if (action === "SEND_EMAIL") {
       }
       var toList = Array.isArray(payload.emails) ? payload.emails : String(payload.emails).split(',').map(function(e) { return e.trim(); });
       MailApp.sendEmail({
-        to: toList,
+        to: toList.join(', '),
         subject: payload.subject,
         htmlBody: payload.body
       });
@@ -628,7 +628,7 @@ class PEAGoogleSheetService {
         if (!snapshot.success) {
             return {
                 success: false,
-                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.19 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
+                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.20 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
                 sent: true,
                 detail: snapshot
             };
@@ -766,7 +766,7 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     return {
                         success: false,
                         reason: 'OLD_SCRIPT',
-                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.19 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
+                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.20 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
                     };
                 }
                 return { success: false, reason: 'BAD_RESPONSE', payload, message: 'GAS ตอบกลับรูปแบบที่ไม่รู้จัก' };

@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.19
+ * Build Version: v0.7.20
  */
 
 class PEASmartVehicleApp {
