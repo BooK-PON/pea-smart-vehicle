@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.27
+ * Build Version: v0.7.28
  */
 
 class PEASmartVehicleApp {
@@ -3624,15 +3624,26 @@ if (isNaN(startMileage) || startMileage < 0) {
         });
 
 // Google Sheets Integration Sync — บันทึกเลขไมล์ขากลับในสมุด "บันทึกการเข้า-ออกรถยนต์"
-        // โดยตรง (DEPARTURE_END) ไม่สร้างแถวปลอมในสมุดตรวจสภาพอีกต่อไป (แยกสมุดตามที่ร้องขอ)
-        if (typeof googleSheet !== 'undefined') {
-            googleSheet.logDepartureEnd({
+        // ผ่านคิวซิงค์ (DEPARTURE_END) ไม่สร้างแถวปลอมในสมุดตรวจสภาพ
+        // ใช้ enqueueSync เหมือน saveVehicle: ถ้าออฟไลน์/ยังไม่ตั้ง URL => ข้อมูลขากลับค้างในคิว
+        // แล้วจะถูก flush ขึ้นชีตเองตอน auto-sync หรือกดปุ่มซิงค์ (เดิมเรียกตรงๆ ข้อมูลหายเมื่อออฟไลน์)
+        if (typeof db !== 'undefined') {
+            db.enqueueSync('UPDATE_DEPARTURE', {
                 missionId: mission.id,
                 vehicleId: mission.vehicleId,
                 plate: mission.plate,
+                driver: mission.operatorName,
+                employeeId: mission.employeeId,
+                taskDescription: mission.taskDescription,
+                startMileage: mission.startMileage || 0,
                 endMileage: endMileage,
                 mileageDelta: mileageDelta
-            }).catch(e => console.warn('[GoogleSheet] Return mileage sync warning:', e));
+            });
+            if (db.isOnline() && typeof googleSheet !== 'undefined' && googleSheet.isConnected()) {
+                db.processSyncQueue().then(r => {
+                    if (r && r.success) console.log('[GoogleSheet] Return mileage sync: จัดการคิวแล้ว (' + (r.count || 0) + ' รายการ)');
+                }).catch(e => console.warn('[GoogleSheet] processSyncQueue error:', e));
+            }
         }
 
         // จบภารกิจ เคลียร์ออกจาก Active Missions

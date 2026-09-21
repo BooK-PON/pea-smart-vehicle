@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.27 (Cache Busting)
+ * Build Version: v0.7.28 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.27';
+const APP_BUILD_VERSION = 'v0.7.28';
 
 class PEADatabase {
     constructor() {
@@ -716,7 +716,9 @@ class PEADatabase {
             'SAVE_TICKET': 'REPAIR_APPROVAL',
             'ADD_LOG': null,
             'SAVE_INSPECTION': 'INSPECTION',
-            'SAVE_DEPARTURE': 'DEPARTURE'
+            'SAVE_DEPARTURE': 'DEPARTURE',
+            // ปิดภารกิจ/บันทึกเลขไมล์ขากลับ ไปที่สมุด บันทึกการเข้า-ออกรถยนต์ (GAS: DEPARTURE_END)
+            'UPDATE_DEPARTURE': 'DEPARTURE_END'
         };
         return map[action] || null;
     }
