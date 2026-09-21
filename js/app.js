@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
-* Build Version: v0.7.31
+* Build Version: v0.7.32
  */
 
 class PEASmartVehicleApp {
@@ -2214,7 +2214,7 @@ const diff = this._taxDaysLeft(v) === null ? 999 : this._taxDaysLeft(v);
     // =========================================================================
     // Google Sheets Integration Modal & Actions (ฐานข้อมูล Google Sheets)
 // รุ่น GAS template ที่แอปนี้ต้องการให้เชื่อมต่อ (ต้องปั่นตรงกับ APPS_SCRIPT_code_ready_to_paste.js)
-    GAS_BUILD_TARGET = 'GAS-v0.7.30';
+    GAS_BUILD_TARGET = 'GAS-v0.7.32';
 
     renderGasBuildStatus() {
         const el = document.getElementById('gas-build-status');

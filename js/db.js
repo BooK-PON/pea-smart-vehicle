@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.31 (Cache Busting)
+ * Build Version: v0.7.32 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.31';
+const APP_BUILD_VERSION = 'v0.7.32';
 
 class PEADatabase {
     constructor() {
@@ -350,8 +350,11 @@ class PEADatabase {
     startVehicleMission(missionData) {
         const missions = this.getActiveMissions();
         const index = missions.findIndex(m => m.vehicleId === missionData.vehicleId);
+        const existing = index >= 0 ? missions[index] : null;
         const mission = {
-            id: 'MSN-' + Date.now().toString(36).toUpperCase(),
+            // สำคัญ: กรณีอัปเดตภารกิจของคันที่ออกอยู่แล้ว ให้ "ใช้ id เดิม" ไม่สร้างใหม่
+            // (มิฉะนั้น GAS DEPARTURE จะสร้างแถวใหม่ id ใหม่ แล้วแถวเก่าจะค้าง "ออกปฏิบัติงาน" ไม่หาย)
+            id: (existing && existing.id) ? existing.id : ('MSN-' + Date.now().toString(36).toUpperCase()),
             vehicleId: missionData.vehicleId,
             plate: missionData.plate,
             model: missionData.model,
@@ -359,8 +362,8 @@ class PEADatabase {
             employeeId: missionData.employeeId,
             taskDescription: missionData.taskDescription || 'ปฏิบัติงานภาคสนาม',
             startMileage: missionData.startMileage,
-            departureTime: missionData.departureTime || new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
-            departureDate: missionData.departureDate || new Date().toLocaleDateString('th-TH'),
+            departureTime: existing && existing.departureTime ? existing.departureTime : (missionData.departureTime || new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })),
+            departureDate: existing && existing.departureDate ? existing.departureDate : (missionData.departureDate || new Date().toLocaleDateString('th-TH')),
             status: 'OUT_ON_DUTY'
         };
 
@@ -516,10 +519,12 @@ class PEADatabase {
             const vehicleId = m && String(m.vehicleId);
             if (!vehicleId) { result.push(m); return; }
             seenVehicle[vehicleId] = true;
-            const remoteForThis = activeById[String(m.id || '')] || completedById[String(m.id || '')];
-            if (remoteForThis && this._isCompletedDepartureRow(remoteForThis)) {
+            // สำคัญ: ถ้ามีแถว "จบแล้ว" (Completed) ของ missionId นี้อยู่แม้แต่แถวเดียว ให้ถือว่าจบแล้ว
+            // (เดิมใช้ activeById || completedById ดันเลือกแถว "ออกปฏิบัติงาน" ค้างไว้ → mission ฟื้นคืนทุก pull ไม่หาย)
+            const rid = String(m.id || '');
+            if (rid && completedById[rid]) {
                 removed++;
-                return; // คนอื่นปิดภารกิจนี้ไปแล้ว
+                return; // ชีตมีหลักฐานว่าภารกิจนี้จบแล้ว → ปลดออก
             }
             result.push(m);
         });
@@ -529,6 +534,8 @@ class PEADatabase {
             if (!row || !row.vehicleId) return;
             if (this._isCompletedDepartureRow(row)) return;
             const vehicleId = String(row.vehicleId);
+            const rid2 = String(row.missionId || '');
+            if (rid2 && completedById[rid2]) return; // missionId นี้เคยจบแล้ว → ไม่ฟื้นคืนจากแถวแฝดที่ค้าง
             if (seenVehicle[vehicleId]) return; // เครื่องกำลังทำคันนี้อยู่ (หรือเพิ่มไปแล้ว)
             seenVehicle[vehicleId] = true;
             const mission = this._missionFromRemoteRow(row);

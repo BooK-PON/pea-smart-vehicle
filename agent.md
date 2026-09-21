@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.31  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.32  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -280,7 +280,7 @@
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.31)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.32)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
@@ -377,6 +377,12 @@
   - **#3 (ฝั่งแอป) ยกพื้นไมล์กันถอย:** `mergeVehiclesFromSnapshot(snapshotRows, localVehicles, allDepartures)` — นำ "endMileage สูงสุดเท่าที่เคยมี (เฉพาะภารกิจที่เสร็จแล้ว)" จากสมุดเข้า-ออกมาเป็นค่าขั้นต่ำของไมล์รถ → เครื่องที่ pull มาเห็นเลขไมล์ถูกต้องทันที และเมื่อมีการ save รถครั้งถัดไปจะ push ขึ้น master ให้กลับมาถูกถาวร
   - **การตรวจ:** `node --check` ผ่าน |
 | v0.7.31 | อัปเดต `DEFAULT_WEBAPP_URL` ใน `js/googleSheetService.js` เป็น **URL ที่ผู้ใช้ redeploy และเทสต์ผ่านแล้ว** (`AKfycbzxMue9lJla...` → GAS-v0.7.30) — เครื่องใหม่/เครื่องที่ยังไม่เคยตั้งค่า URL ต่อเครื่องจะใช้ค่าเริ่มต้นที่ถูกต้อง (ไม่ต้องกรอก URL เอง) |
+| v0.7.32 | **แก้ "หน้าบันทึกขากลับ (Active Trips) มีข้อความ/ภารกิจค้างไม่หาย" (ต้อง Redeploy GAS อีกรอบ! → GAS-v0.7.32)** |
+  - **สาเหตุ (พบจริงในสมุด):** (1) GAS `DEPARTURE` ไม่กันการบันทึกซ้ำ → กด/ส่งซ้ำ = 2 แถว missionId เดียวกัน (พบจริง MSN-MUBG7PTG มีแถว Completed + แถว Out แฝด); (2) `DEPARTURE_END` ปิดแค่แถวแรก (`break`) → แถวแฝดค้าง "ออกปฏิบัติงาน" ตลอด; (3) `startVehicleMission` สร้าง mission.id ใหม่ทุกครั้ง → อัปเดตภารกิจคันที่ออกอยู่ = แถวใหม่ แถวเก่าค้าง; (4) `mergeActiveMissionsFromRemote` ใช้ `activeById || completedById` → เลือกแถวค้าง → mission ฟื้นคืนทุก pull + บังคับรถ IN_USE ทุกเครื่อง
+  - **แก้ (GAS):** `DEPARTURE` → **UPSERT ตาม missionId** (เจอแถวเดิมเขียนทับ ไม่ append; แถวที่จบแล้วไม่ reopen); `DEPARTURE_END` + INSPECTION-close → **ปิดทุกแถว Out ที่ตรง** (ไม่ break) ปิดแถวแฝดหมด
+  - **แก้ (แอป):** `startVehicleMission` รักษา mission.id เดิมตอนอัปเดต; `mergeActiveMissionsFromRemote` → ใช้ `completedById` ก่อน (มีแถวจบแล้ว = จบแล้ว ไม่ฟื้นคืนจากแถวแฝด)
+  - **ไล้ข้อมูลค้าง (ทำหลัง deploy):** ปิด MSN-MUBG7PTG แถวแฝด (end=10020) + MSN-MUBHGHTV (PK-2126, end=10001 ตามที่ผู้ใช้ยืนยัน) แล้ว READ_ALL ห้ามมีแถว "ออกปฏิบัติงาน" เหลือ
+  - **การตรวจ:** `node --check` ผ่าน |
 | v0.7.32 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
