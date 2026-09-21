@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.21
+ * Build Version: v0.7.22
  */
 
 class PEASmartVehicleApp {
@@ -357,8 +357,6 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                     <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
                     <span>ถึงกำหนด PM 10,000 กม. (วิ่งแล้ว ${distanceSincePm.toLocaleString()} กม. - ควรเปลี่ยนถ่ายของเหลว)</span>
                     <button onclick="app.markPmDone('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ PM แล้ว</button>
-                        <i class="fa-solid fa-check"></i> เคลียร์ PM แล้ว
-                    </button>
                 </div>
             `);
         } else {
@@ -376,11 +374,12 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
             const today = new Date();
             const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
 
-            if (diffDays < 0) {
+if (diffDays < 0) {
                 badges.push(`
                     <div class="px-2.5 py-1 rounded-lg bg-red-600/30 border border-red-500 text-red-300 text-xs flex items-center gap-1.5 font-bold">
                         <i class="fa-solid fa-gavel text-red-400"></i>
                         <span>ภาษีหมดอายุแล้ว ${Math.abs(diffDays)} วัน! (มีผลทางกฎหมาย ห้ามขับขี่)</span>
+                        <button onclick="app.markTaxRenewed('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ภาษี แล้ว</button>
                     </div>
                 `);
             } else if (diffDays <= 30) {
@@ -388,6 +387,7 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                     <div class="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/60 text-amber-300 text-xs flex items-center gap-1.5 font-bold">
                         <i class="fa-solid fa-calendar-xmark text-amber-400"></i>
                         <span>ภาษีจะหมดอายุในอีก ${diffDays} วัน (${v.taxExpiry})</span>
+                        <button onclick="app.markTaxRenewed('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ภาษี แล้ว</button>
                     </div>
                 `);
             } else {
@@ -1380,9 +1380,9 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                             <div class="font-mono text-slate-200 font-bold">${v.mileage.toLocaleString()} กม.</div>
                             ${isPmDue ? `<div class="flex items-center gap-2 mt-1"><span class="text-[10px] text-amber-400 font-bold"><i class="fa-solid fa-wrench"></i> ถึงรอบ PM 10,000 กม.</span><button onclick="app.markPmDone('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ PM</button></div>` : `<span class="text-[10px] text-slate-500">อีก ${(10000 - distanceSincePm).toLocaleString()} กม.</span>`}
                         </td>
-                        <td class="py-3 px-3">
+<td class="py-3 px-3">
                             <div class="text-slate-200">${v.taxExpiry || '-'}</div>
-                            ${isTaxCritical ? '<span class="text-[10px] text-red-400 font-bold animate-pulse"><i class="fa-solid fa-gavel"></i> ขาดต่อภาษีแล้ว</span>' : (isTaxWarning ? `<span class="text-[10px] text-amber-400 font-bold">อีก ${diff} วันหมดอายุ</span>` : '<span class="text-[10px] text-emerald-400">ปกติ</span>')}
+                            ${isTaxCritical ? `<div class="flex items-center gap-2 mt-1"><span class="text-[10px] text-red-400 font-bold animate-pulse"><i class="fa-solid fa-gavel"></i> ขาดต่อภาษีแล้ว</span><button onclick="app.markTaxRenewed('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ภาษี</button></div>` : (isTaxWarning ? `<div class="flex items-center gap-2 mt-1"><span class="text-[10px] text-amber-400 font-bold">อีก ${diff} วันหมดอายุ</span><button onclick="app.markTaxRenewed('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ภาษี</button></div>` : '<span class="text-[10px] text-emerald-400">ปกติ</span>')}
                         </td>
                         <td class="py-3 px-3">${statusBadge}</td>
                         <td class="py-3 px-3 text-right">
@@ -3729,6 +3729,50 @@ saveAlertEmails() {
         });
 
         notifier.showToast('บันทึกการเคลียร์ PM สำเร็จ', `ทะเบียน ${vehicle.plate}: รอบ PM ถัดไปอีก 10,000 กม.`, 'SUCCESS');
+        this.updateVehicleHeaderCard();
+        this.renderSupervisorDashboard();
+        this.renderPmAndTaxBadges(db.getVehicleById(vehicle.id));
+    }
+
+    // ปุ่ม "เคลียร์ภาษี" — บันทึกว่าได้ต่อภาษีรถแล้ว
+    // ถามวันหมดอายุใหม่ (รูปแบบ YYYY-MM-DD) → ตั้ง taxExpiry ใหม่ → ระบบรู้ว่าถูกต่อแล้ว จะแจ้งอีกครั้งเมื่อใกล้หมดอายุ
+    markTaxRenewed(vehicleId) {
+        const vehicle = db.getVehicleById(vehicleId);
+        if (!vehicle) return;
+
+        const currentYear = new Date().getFullYear();
+        const defaultExpiry = new Date();
+        defaultExpiry.setFullYear(currentYear + 1);
+        const defaultStr = defaultExpiry.toISOString().slice(0, 10);
+
+        const input = prompt(
+            `ยืนยันว่าได้ต่อภาษีรถทะเบียน ${vehicle.plate} แล้ว?\n\n` +
+            `กรอกวันหมดอายุภาษีฉบับใหม่ (รูปแบบ YYYY-MM-DD):`,
+            defaultStr
+        );
+        if (input === null) return;
+        const newExpiry = input.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) {
+            notifier.showToast('รูปแบบวันที่ไม่ถูกต้อง', 'กรอกเป็น YYYY-MM-DD เช่น 2027-09-21', 'ERROR');
+            return;
+        }
+
+        vehicle.taxExpiry = newExpiry;
+        vehicle.updatedAt = new Date().toISOString();
+        db.saveVehicle(vehicle);
+        localStorage.removeItem(`pea_alert_tax_cycle_${vehicle.id}`);
+
+        db.addConsolidatedActivityLog({
+            actionType: 'TAX_RENEWED',
+            vehicleId: vehicle.id,
+            plate: vehicle.plate,
+            operator: this.currentInspector || 'หัวหน้าแผนกยานพาหนะ (Supervisor)',
+            role: 'CHIEF',
+            summary: `ต่อภาษีแล้ว: วันหมดอายุใหม่ = ${newExpiry} (เคลียร์การแจ้งเตือนภาษี)`,
+            statusResult: 'READY'
+        });
+
+        notifier.showToast('บันทึกการต่อภาษีสำเร็จ', `ทะเบียน ${vehicle.plate}: หมดอายุใหม่ ${newExpiry}`, 'SUCCESS');
         this.updateVehicleHeaderCard();
         this.renderSupervisorDashboard();
         this.renderPmAndTaxBadges(db.getVehicleById(vehicle.id));

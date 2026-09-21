@@ -214,7 +214,7 @@ class PEAReportGenerator {
 
                         <!-- Footer Legal Notice -->
                         <div class="text-[10px] text-slate-400 text-center border-t border-slate-200 pt-2 font-mono">
-                            ระบบบันทึกความปลอดภัยยานพาหนะอัตโนมัติ PEA Smart Vehicle • Build v0.7.21 • กองยานพาหนะ การไฟฟ้าส่วนภูมิภาค
+                            ระบบบันทึกความปลอดภัยยานพาหนะอัตโนมัติ PEA Smart Vehicle • Build v0.7.22 • กองยานพาหนะ การไฟฟ้าส่วนภูมิภาค
                         </div>
                     </div>
                 </div>

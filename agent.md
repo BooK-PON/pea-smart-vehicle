@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.21  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.22  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -280,7 +280,7 @@
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.21)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.22)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
@@ -317,7 +317,8 @@
   - **ปุ่ม `เคลียร์ PM แล้ว`** ใน header badge + แถว fleet table ของตารางสรุป → `markPmDone()` ตั้ง `lastPmMileage = mileage` ปัจจุบัน + log + ซิงก์ขึ้นชีต (ผ่านคอลัมน์ JSON ทำให้ baseline ข้ามเครื่องได้)
   - **ต่อภาษี:** ใช้ฟอร์มแก้รถ (ตั้ง `taxExpiry` ใหม่) — ค่าเปลี่ยน = รู้ว่าต่อแล้ว รอบถัดไป (ใกล้ 7 วัน) จะแจ้งอีก
   - Fleet scan ตอนเปิดแอป ส่งแยก 2 ฉบับ (ฉบับ PM + ฉบับภาษี) แทนฉบับรวม |
-| v0.7.22 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
+| v0.7.22 | **ปุ่ม "เคลียร์ภาษี" (`markTaxRenewed`)** — สมมาตรกับเคลียร์ PM: ถามวันหมดอายุภาษีใหม่ (YYYY-MM-DD, ค่าเริ่มต้น = +1 ปี) → ตั้ง `taxExpiry` + ลบ lock `pea_alert_tax_cycle_{id}` + log `TAX_RENEWED` + ซิงก์ขึ้นชีต; เพิ่มปุ่มใน badge หน้ารถ (ขาด+ใกล้หมด) และในตารางสรุปตามตาราง; และแก้ HTML badge PM ผิดรูป (ปีกกาซ้ำซ้อน) — วิธีที่ถูกสำหรับ "ต่อภาษี" แต่ถ้าต้องการแค่เลื่อนการเตือนแบบไม่แก้ข้อมูลจริง ยังใช้ฟอร์มแก้รถได้ |
+| v0.7.23 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
 - **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**
@@ -366,7 +367,7 @@
 ### 8.6 เครื่องมือ/ไฟล์สำคัญ
 - `js/googleSheetService.js` — template GAS (`PEA_GOOGLE_APPS_SCRIPT_CODE`) + readSnapshot/readSnapshotWithRetry + SEND_EMAIL (`to` = string คั่น `,`) + DEFAULT_WEBAPP_URL
 - `js/db.js` — queue/sync + `getAlertRecipients()`, `getPmRecipients()`, `getTaxRecipients()`, `getAlertRecipientsForRoles()` (fallback key `pea_alert_emails`)
-- `js/app.js` — `checkFleetAlerts()` (2 ฉบับแยก), `checkMaintenanceAlerts()`, `_buildVehicleAlerts()`, `_sendAlertEmail()`, `_composeAlertEmail()`, `_markPmCycleAlerted()`, `_markTaxCycleAlerted()`, `markPmDone()` (ปุ่มเคลียร์ PM), `sendTestAlertEmail()`, `openGoogleSheetModal()` (หัวข้อ 4)
+- `js/app.js` — `checkFleetAlerts()` (2 ฉบับแยก), `checkMaintenanceAlerts()`, `_buildVehicleAlerts()`, `_sendAlertEmail()`, `_composeAlertEmail()`, `_markPmCycleAlerted()`, `_markTaxCycleAlerted()`, `markPmDone()` (ปุ่มเคลียร์ PM), `markTaxRenewed()` (ปุ่มเคลียร์ภาษี v0.7.22), `sendTestAlertEmail()`, `openGoogleSheetModal()` (หัวข้อ 4)
 - `APPS_SCRIPT_code_ready_to_paste.js` — **ไฟล์ GAS ฉบับวางจริง 449 บรรทัด (v0.7.21 comment, โค้ด = v0.7.20 join fix)**
 - `test_gsheet.mjs` — `node test_gsheet.mjs "URL"` (เทสต์ 4 ขั้นจาก Node ต่อ URL จริง, ใช้ได้ทั้งอ่าน/ส่ง/อีเมล)
 - `extract_apps_script.js` — สกัด template → เขียนไฟล์วางใหม่
