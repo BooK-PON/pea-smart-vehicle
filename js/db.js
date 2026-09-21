@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.24 (Cache Busting)
+ * Build Version: v0.7.25 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.24';
+const APP_BUILD_VERSION = 'v0.7.25';
 
 class PEADatabase {
     constructor() {
@@ -251,11 +251,10 @@ class PEADatabase {
         } else {
             vehicles.push(vehicle);
         }
-        // แต้มเวลา ISO เสมอเมื่อเขียนจากเครื่อง — ใช้เป็นหลักตัดสิน "ใครใหม่กว่า" ในการ merge กับ Google Sheets
-        // (เดิม saveVehicle ไม่ตั้ง updatedAt → merge เปรียบเทียบกับ lastInspectDate รูปแบบ ไทย/ต่าง format ปะปน ล็อกผิดทาง)
-        if (!vehicle.updatedAt || typeof vehicle.updatedAt !== 'string') {
-            vehicle.updatedAt = new Date().toISOString();
-        }
+        // แต้มเวลา ISO ให้ใหม่ทุกครั้งเมื่อเขียนจากเครื่อง (ไม่ใช่แค่ครั้งแรก)
+        // ใช้เป็นหลักตัดสิน "ใครใหม่กว่า" ในการ merge กับ Google Sheets —
+        // ถ้าไม่รีเฟรชเวลาทุกเซฟ ผู้บันทึกขากลับจะถูกคิดว่า "ข้อมูลเก่า" แล้วเครื่องอื่นไม่ยอมรับเลขไมล์ใหม่
+        vehicle.updatedAt = new Date().toISOString();
         localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
         this.enqueueSync('UPDATE_VEHICLE', vehicle);
     }
@@ -305,6 +304,8 @@ class PEADatabase {
         } else {
             employees.push(employee);
         }
+        // เช่นเดียวกับ saveVehicle: แต้มเวลาใหม่ทุกครั้งเพื่อตัดสิน "ใครใหม่กว่า" ในการ merge ข้ามเครื่อง
+        employee.updatedAt = new Date().toISOString();
         localStorage.setItem(this.STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
         this.enqueueSync('UPDATE_EMPLOYEE', employee);
         return employee;
@@ -403,6 +404,26 @@ class PEADatabase {
             v.operationalStatus = operationalStatus;
             localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
         }
+    }
+
+    // ปรับเลขไมล์จากข้อมูลซิงก์ (เช่น ประวัติตรวจสภาพ/ขากลับจากอีกเครื่อง)
+    // กฎไมล์เป็นแบบเพิ่มทางเดียว: รับค่าที่สูงกว่าของเก่ากับใหม่เท่านั้น ไม่ยอมให้ "เลขไมล์ถอยหลัง"
+    // เขียนตรงโดยไม่ touch updatedAt + ไม่ trigger enqueue กัน echo loop
+    applyMileageFromSync(vehicleId, mileage) {
+        if (!vehicleId || mileage === undefined || mileage === null) return false;
+        const km = Number(mileage);
+        if (isNaN(km) || km < 0) return false;
+        const vehicles = this.getVehicles();
+        const v = vehicles.find(x => String(x.id) === String(vehicleId));
+        if (!v) return false;
+        const current = Number(v.mileage) || 0;
+        if (km > current) {
+            v.mileage = km;
+            localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
+            console.log(`[PEA DB] อัปเดตเลขไมล์จากซิงก์ ${vehicleId}: ${current.toLocaleString()} -> ${km.toLocaleString()} กม.`);
+            return true;
+        }
+        return false;
     }
 
     // แปลงแถว departure จากชีต -> รูปแบบ mission ของระบบ (ขาไป)
@@ -646,8 +667,7 @@ class PEADatabase {
     }
 
     enqueueSync(action, payload, allowPhotoStrip) {
-        if (!this.isOnline()) {
-            // ไม่มีอินเทอร์เน็ต -> เก็บเข้าคิวสำหรับซิงค์ทีหลัง
+        const pushToQueue = () => {
             const queue = this.getSyncQueue();
             queue.push({
                 queueId: 'Q-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 4),
@@ -657,24 +677,27 @@ class PEADatabase {
             });
             this._setItemQuotaSafe(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue), !!allowPhotoStrip);
             window.dispatchEvent(new CustomEvent('pea-sync-queue-updated', { detail: { queueLength: queue.length } }));
+        };
+
+        if (!this.isOnline()) {
+            // ไม่มีอินเทอร์เน็ต -> เก็บเข้าคิวสำหรับซิงค์ทีหลัง
+            pushToQueue();
+        } else if (typeof window.googleSheet === 'undefined' || !window.googleSheet.isConnected()) {
+            // ยังไม่ได้ตั้งค่า URL ชีต -> เข้าคิวเสมอ (เดิมปล่อยผ่านเงียบ ๆ ข้อมูลไม่มีทางขึ้นชีต)
+            // พอตั้งค่าหรือกดปุ่มซิงค์ ระบบจะส่งคิวนี้ขึ้นไปเอง
+            console.log(`[PEA DB] ยังไม่ได้ตั้ง Google Sheets URL, เก็บ "${action}" เข้าคิว`);
+            pushToQueue();
         } else {
             // Already online: ส่งขึ้น Google Sheets จริงทันที (ถ้าตั้ง URL ไว้)
             // ให้ผลลัพธ์จริงกลับมา: ถ้าส่งไม่สำเร็จ (ถูกบล็อก/CORS/error) => เก็บเข้าคิว + ประกาศให้ UI รู้
             this.syncToGoogleSheets(action, payload).then(result => {
                 if (!result || result.success !== true) {
-                    const queue = this.getSyncQueue();
-                    queue.push({
-                        queueId: 'Q-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 4),
-                        action,
-                        payload,
-                        enqueuedAt: new Date().toISOString()
-                    });
-                    this._setItemQuotaSafe(this.STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue), !!allowPhotoStrip);
-                    window.dispatchEvent(new CustomEvent('pea-sync-queue-updated', { detail: { queueLength: queue.length } }));
+                    pushToQueue();
                     console.warn(`[PEA DB] ส่ง GSheet ไม่สำเร็จ (${result ? (result.reason || result.error || 'error') : 'unknown'}) เก็บเข้าคิวรอซิงค์:`, action);
                 }
             }).catch(e => {
                 console.warn('[PEA DB] ส่ง GSheet ขัดข้อง เก็บเข้าคิวรอซิงค์:', e);
+                pushToQueue();
             });
         }
     }
@@ -735,9 +758,22 @@ class PEADatabase {
         const remaining = [];
         let successCount = 0;
         let droppedCount = 0;
+        // คิว UPDATE เก่าที่ดันไปช้า มี payload เลขไมล์เก่าได้ => ส่ง payload ล่าสุดจาก localStorage แทน
+        // เพื่อกัน "คิวเก่าทับข้อมูลใหม่ที่เบียเพิ่ง upload" ทำให้อีกเครื่องเห็นเลขไมล์ถอยหลัง
+        const freshPayload = (item) => {
+            if (item.action === 'UPDATE_VEHICLE' && item.payload && item.payload.id) {
+                const cur = this.getVehicleById(item.payload.id);
+                return cur || item.payload;
+            }
+            if (item.action === 'UPDATE_EMPLOYEE' && item.payload && item.payload.id) {
+                const cur = this.getEmployeeById(item.payload.id);
+                return cur || item.payload;
+            }
+            return item.payload;
+        };
         for (const item of queue) {
             try {
-                const res = await this.syncToGoogleSheets(item.action, item.payload);
+                const res = await this.syncToGoogleSheets(item.action, freshPayload(item));
                 if (res && (res.success === true || res.ok === true)) {
                     successCount++;
                     continue;

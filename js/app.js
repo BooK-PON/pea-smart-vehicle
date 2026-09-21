@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.24
+ * Build Version: v0.7.25
  */
 
 class PEASmartVehicleApp {
@@ -2556,6 +2556,26 @@ exportGoogleSheetCSV() {
                 }
             } catch(e) { console.warn('[PEA] Import inspections error:', e); }
 
+            // อัปเดตเลขไมล์ของรถตามประวัติตรวจสภาพ/ขากลับที่ import เข้ามา
+            // (กันกรณีคนกลับบ้านแล้วอีกเครื่องเปิดมาเห็นเลขไมล์เก่า แม้แถวรถในชีตจะยังอัปเดตช้า)
+            let mileageBumped = 0;
+            try {
+                if (realRemoteInspections.length > 0) {
+                    const newestKm = {};
+                    realRemoteInspections.forEach(insp => {
+                        if (!insp || !insp.vehicleId) return;
+                        const km = Number(insp.endMileage);
+                        if (!isNaN(km) && km > 0) {
+                            const vid = String(insp.vehicleId);
+                            newestKm[vid] = Math.max(newestKm[vid] || 0, km);
+                        }
+                    });
+                    Object.keys(newestKm).forEach(vid => {
+                        if (db.applyMileageFromSync(vid, newestKm[vid])) mileageBumped++;
+                    });
+                }
+            } catch(e) { console.warn('[PEA] Apply mileage from inspections error:', e); }
+
             // นำเข้าประวัติซ่อมจากชีต (เฉพาะรายการที่เครื่องยังไม่มี, เขียนตรงเพื่อกัน echo loop)
             let repairImported = 0;
             if (realRemoteRepairs.length > 0) {
@@ -2649,7 +2669,7 @@ exportGoogleSheetCSV() {
                     plate: '-',
                     operator: 'ระบบ',
                     role: 'SYSTEM',
-                    summary: 'ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง รถ ' + merged.length + ' คัน' + (tripImported ? ', รถออกงาน +' + tripImported + ' คัน' : '') + (tripClosed ? ', ปิดภารกิจที่จบแล้ว ' + tripClosed + ' คัน' : '') + (inspectionImported ? ', ตรวจสภาพ +' + inspectionImported + ' รายการ' : '') + (empImported ? ', พนักงาน +' + empImported + ' คน' : '') + (repairImported ? ', ซ่อม +' + repairImported + ' รายการ' : '') + (uploadedVehicles ? ', อัปโหลดรถขึ้นชีต ' + uploadedVehicles + ' คัน' : '') + (uploadedMissions ? ', อัปโหลดภารกิจขึ้นชีต ' + uploadedMissions + ' คัน' : ''),
+                    summary: 'ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง รถ ' + merged.length + ' คัน' + (tripImported ? ', รถออกงาน +' + tripImported + ' คัน' : '') + (tripClosed ? ', ปิดภารกิจที่จบแล้ว ' + tripClosed + ' คัน' : '') + (inspectionImported ? ', ตรวจสภาพ +' + inspectionImported + ' รายการ' : '') + (mileageBumped ? ', ไมล์อัปเดต ' + mileageBumped + ' คัน' : '') + (empImported ? ', พนักงาน +' + empImported + ' คน' : '') + (repairImported ? ', ซ่อม +' + repairImported + ' รายการ' : '') + (uploadedVehicles ? ', อัปโหลดรถขึ้นชีต ' + uploadedVehicles + ' คัน' : '') + (uploadedMissions ? ', อัปโหลดภารกิจขึ้นชีต ' + uploadedMissions + ' คัน' : ''),
                     statusResult: 'SUCCESS'
                 };
                 logs.unshift(entry);
@@ -2662,6 +2682,7 @@ exportGoogleSheetCSV() {
             if (tripImported > 0) msgParts.push('ออกงาน +' + tripImported + ' คัน');
             if (tripClosed > 0) msgParts.push('ปิดภารกิจที่จบแล้ว ' + tripClosed + ' คัน');
             if (inspectionImported > 0) msgParts.push('ประวัติตรวจ +' + inspectionImported + ' รายการ');
+            if (mileageBumped > 0) msgParts.push('ไมล์อัปเดต ' + mileageBumped + ' คัน');
             if (empImported > 0) msgParts.push('พนักงาน +' + empImported + ' คน');
             if (repairImported > 0) msgParts.push('ซ่อม +' + repairImported + ' รายการ');
             if (uploadedVehicles > 0) msgParts.push('อัปโหลดรถขึ้นชีต ' + uploadedVehicles + ' คัน');
@@ -2697,6 +2718,20 @@ exportGoogleSheetCSV() {
                 } else {
                     console.log('[PEA Auto-sync] ข้ามรอบนี้:', result && result.reason ? result.reason : 'unknown');
                 }
+
+                // หลัง pull เสร็จ ให้ flush คิวซิงค์ที่ค้างอยู่ (บันทึกตอน offline / ยังไม่ตั้ง URL ชีต)
+                // เพื่อไม่ให้ข้อมูลอย่าง "เลขไมล์ขากลับ" ค้างในเครื่องที่บันทึก ไม่เคยถูกส่งขึ้นชีต
+                try {
+                    if (db.isOnline() && (db.getSyncQueue() || []).length > 0) {
+                        const flushed = await db.processSyncQueue();
+                        if (flushed && flushed.count > 0) {
+                            console.log('[PEA Auto-sync] flush คิวซิงค์ ' + flushed.count + ' รายการขึ้นชีตเรียบร้อย');
+                            if (result && result.success === false) {
+                                this._lastSyncTs = 0; // ให้รอบถัดไป pull ใหม่เพื่อเห็นผลที่เพิ่ง upload
+                            }
+                        }
+                    }
+                } catch (sqe) { console.warn('[PEA Auto-sync] flush queue error:', sqe); }
             } catch (e) {
                 console.warn('[PEA Auto-sync] error:', e);
             } finally {
