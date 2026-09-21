@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.23 (Cache Busting)
+ * Build Version: v0.7.24 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.23';
+const APP_BUILD_VERSION = 'v0.7.24';
 
 class PEADatabase {
     constructor() {
@@ -392,6 +392,156 @@ class PEADatabase {
             localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
         }
         return filtered;
+    }
+
+    // ตั้งสถานะรถตรง ๆ (ไม่ trigger enqueue กลับ กัน echo loop เมื่อนำเข้าจากชีต)
+    setVehicleStatusDirect(vehicleId, operationalStatus) {
+        if (!vehicleId) return;
+        const vehicles = this.getVehicles();
+        const v = vehicles.find(x => x.id === vehicleId);
+        if (v && v.operationalStatus !== operationalStatus) {
+            v.operationalStatus = operationalStatus;
+            localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
+        }
+    }
+
+    // แปลงแถว departure จากชีต -> รูปแบบ mission ของระบบ (ขาไป)
+    _missionFromRemoteRow(row) {
+        if (!row || !row.vehicleId) return null;
+        let departureDate = '', departureTime = '';
+        const ts = String(row.timestamp || '').trim();
+        if (ts) {
+            const comma = ts.indexOf(',');
+            if (comma >= 0) {
+                departureDate = ts.slice(0, comma).trim();
+                departureTime = ts.slice(comma + 1).trim().split(' ')[0];
+            } else {
+                departureDate = ts;
+            }
+        }
+        return {
+            id: row.missionId || ('MSN-' + Date.now().toString(36).toUpperCase()),
+            vehicleId: String(row.vehicleId),
+            plate: row.plate || '',
+            model: row.model || '',
+            operatorName: row.operatorName || row.driver || 'พนักงาน กฟภ.',
+            employeeId: row.employeeId !== undefined && row.employeeId !== null ? String(row.employeeId) : '-',
+            taskDescription: row.taskDescription || 'ปฏิบัติงานภาคสนาม',
+            startMileage: Number(row.startMileage) || 0,
+            departureTime: departureTime,
+            departureDate: departureDate,
+            status: 'OUT_ON_DUTY',
+            fromSync: true
+        };
+    }
+
+    // ตรวจว่าแถว departure นี้ "จบภารกิจแล้ว" (ไมล์ขากลับมีค่า หรือสถานะบอกเสร็จสิ้น)
+    _isCompletedDepartureRow(row) {
+        if (!row) return false;
+        const statusStr = String(row.status || '').toLowerCase();
+        if (statusStr.indexOf('เสร็จสิ้น') >= 0 || statusStr.indexOf('completed') >= 0) return true;
+        const em = row.endMileage;
+        return em !== undefined && em !== null && em !== '';
+    }
+
+    // ปรับสถานะ operationalStatus ของรถทุกคันให้ตรงกับชุด missions (เขียนตรงไม่ echo)
+    _syncVehicleStatusFromMissions(missions) {
+        const byVehicle = {};
+        (missions || []).forEach(m => { if (m && m.vehicleId) byVehicle[String(m.vehicleId)] = true; });
+        const vehicles = this.getVehicles();
+        let changed = false;
+        (vehicles || []).forEach(v => {
+            const isInUse = byVehicle[String(v.id)] === true;
+            const cur = v.operationalStatus;
+            if (isInUse && cur !== 'IN_USE') { v.operationalStatus = 'IN_USE'; changed = true; }
+            else if (!isInUse && cur === 'IN_USE') { v.operationalStatus = 'AVAILABLE'; changed = true; }
+        });
+        if (changed) localStorage.setItem(this.STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
+    }
+
+    // นำเข้ารถที่กำลังออกปฏิบัติงาน (Active Trips) จาก Google Sheets เข้าเครื่อง
+    // กติกา merge:
+    //   - คันที่เครื่องนี้กำลังปิดงานอยู่ (มี mission เดิม) => คงของเครื่อง ไม่ทับ
+    //   - ภารกิจที่ชีตบอกว่าจบแล้ว แต่เครื่องยังค้างอยู่ => ลบออก + ปลดสถานะ IN_USE
+    //   - ภารกิจใหม่ที่เครื่องยังไม่มี => เพิ่ม + ตั้งสถานะ IN_USE
+    mergeActiveMissionsFromRemote(remoteRows, localMissions) {
+        if (!Array.isArray(remoteRows) || remoteRows.length === 0) {
+            return { changed: false, missions: localMissions || [], added: 0, removed: 0 };
+        }
+
+        const activeById = {};
+        const completedById = {};
+        remoteRows.forEach(row => {
+            if (!row || !row.vehicleId) return;
+            const id = String(row.missionId || '');
+            if (this._isCompletedDepartureRow(row)) {
+                if (id) completedById[id] = row;
+            } else {
+                if (id) activeById[id] = row;
+            }
+        });
+
+        const byVehicle = {};
+        (localMissions || []).forEach(m => { if (m && m.vehicleId) byVehicle[String(m.vehicleId)] = m; });
+
+        const result = [];
+        const seenVehicle = {};
+        let added = 0, removed = 0;
+
+        // 1) mission ที่เครื่องมีอยู่: คงไว้ เว้นแต่ชีตระบุว่าจบแล้ว => ลบ
+        (localMissions || []).forEach(m => {
+            const vehicleId = m && String(m.vehicleId);
+            if (!vehicleId) { result.push(m); return; }
+            seenVehicle[vehicleId] = true;
+            const remoteForThis = activeById[String(m.id || '')] || completedById[String(m.id || '')];
+            if (remoteForThis && this._isCompletedDepartureRow(remoteForThis)) {
+                removed++;
+                return; // คนอื่นปิดภารกิจนี้ไปแล้ว
+            }
+            result.push(m);
+        });
+
+        // 2) ภารกิจ active จากชีตที่เครื่องยังไม่มี => เพิ่ม
+        remoteRows.forEach(row => {
+            if (!row || !row.vehicleId) return;
+            if (this._isCompletedDepartureRow(row)) return;
+            const vehicleId = String(row.vehicleId);
+            if (seenVehicle[vehicleId]) return; // เครื่องกำลังทำคันนี้อยู่ (หรือเพิ่มไปแล้ว)
+            seenVehicle[vehicleId] = true;
+            const mission = this._missionFromRemoteRow(row);
+            if (mission) { result.push(mission); added++; }
+        });
+
+        const changed = added > 0 || removed > 0;
+        if (changed) {
+            localStorage.setItem(this.STORAGE_KEYS.ACTIVE_MISSIONS, JSON.stringify(result));
+            this._syncVehicleStatusFromMissions(result);
+        }
+        return { changed, missions: result, added, removed };
+    }
+
+    // ลบรายการใน Activity Logs ที่อ้างถึงใบแจ้งซ่อม
+    // options.onlyDefectAlerts = true => ลบเฉพาะ entry "พบชำรุด/แจ้งซ่อม" (INSPECTION_DEFECT)
+    //                                            เก็บ entry ส่งมอบ/อนุมัติ ไว้เป็นหลักฐาน
+    removeActivityLogsByTicketId(ticketId, options) {
+        if (!ticketId) return 0;
+        const opts = options || {};
+        const logs = this.getActivityLogs();
+        const filtered = logs.filter(l => {
+            const linked = l && l.ticketId && String(l.ticketId) === String(ticketId);
+            if (!linked) return true;
+            if (opts.onlyDefectAlerts) {
+                const isDefectAlert = (l.actionType === 'INSPECTION_DEFECT') ||
+                    (l.actionType && String(l.actionType).indexOf('DEFECT') >= 0);
+                return !isDefectAlert;
+            }
+            return false;
+        });
+        const removed = logs.length - filtered.length;
+        if (removed > 0) {
+            localStorage.setItem(this.STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(filtered));
+        }
+        return removed;
     }
 
     getRepairTickets() {

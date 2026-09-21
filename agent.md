@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.23  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.24  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -280,7 +280,7 @@
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.23)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.24)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
@@ -326,7 +326,17 @@
   - **เวลา tax (MEDIUM):** `new Date('YYYY-MM-DD')` แปลว่า UTC → เพิ่ม `_taxExpiryDate()`/`_taxDaysLeft()` แปล local midnight เพื่อเลี่ยง "อีก -0 วัน"/off-by-one ใน UTC+7
   - **merge ข้อมูลถอยหลัง (HIGH):** `saveVehicle` แต้ม `updatedAt` = ISO เพิ่ม `parseTsMs()` (รองรับ ISO + ไทย d/m/yyyyพ.ศ.) และ merge เก็บ **ทุกฟิลด์** local เมื่อ local ใหม่กว่า (เดิมเก็บแค่ 3 ฟิลด์ taxExpiry/lastPmMileage ถูก remote เก่าๆ ทับได้)
   - การตรวจ: `node --check` 8/8 + เทสต์ auto 40/40 ผ่าน |
-| v0.7.24 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
+| v0.7.24 | **ซิงก์ข้ามเครื่องเต็มรูปแบบ + ปลดล็อก General Info (ตามคำขอผู้ใช้):**
+  - **Auto-sync (แทน auto-load แค่วันละครั้ง):** `setupAutoSync()` — ดึงจาก Google Sheets ทุกครั้งที่หน้าจอ focus/visibilitychange + ทุก 60 วิ (throttle 45 วิ, guard กันซ้อน) → ข้อมูลผู้ใช้ทุกคนเห็นตรงกันไม่ต้องกดเอง
+  - **Import ครบ 5 ประเภท** (เดิมครอบแค่ รถ/พนักงาน/ซ่อม): เพิ่ม **departures → ลง Active Trips** (`mergeActiveMissionsFromRemote`) + **inspections → สังเคราะห์เป็นประวัติใน Logs** (logId `GS-INSP-*` กันซ้ำ, เขียนตรงไม่ echo)
+  - **กรอง "ประวัติทดลอง" TEST-* ครบทุกประเภท** + ผ่อนเงื่อนไขว่างให้อัปโหลดข้อมูลเครื่องที่ชีตยังไม่มี (รถ/พนักงาน/**ภารกิจขาออก**)
+  - **บล็อกนำรถซ้ำพร้อมกัน:** `recordDeparture` ตรวจ snapshot จากชีตก่อนบันทึก — ถ้าแถว departure ยัง active ของคันนั้นอยู่ → เตือน CRITICAL (offline ปล่อยผ่าน)
+  - **กม.ห้ามถอยหลัง:** `mergeVehiclesFromSnapshot` ใช้ take-max ทั้ง 2 ทาง — ปิดกรณีกล้องนาฬิกาเครื่องเหลื่อมแล้วกม.หาย
+  - **General Info อิสระ:** `handleEmployeeIdInput`/`updateVehicleHeaderCard` ไม่ล้างชื่อที่พิมพ์เองอีกต่อไป; เติมชื่ออัตโนมัติเมื่อช่องว่างเท่านั้น; **บังคับรหัส+ชื่อจริง** ตอนบันทึกตรวจสภาพ (เลิก fallback `'512446'`/`v.driver` ที่ทำให้ผู้บันทึกผิดคน); **auto-register พนักงานใหม่** `ensureEmployeeRegistered()` — กันรหัสซ้ำ (เช็ค db + PEA_EMPLOYEES) + ซิงก์ชีตผ่านแอคชัน EMPLOYEE ทันที
+  - **ประวัติไม่พอง:** ช่าง "ส่งมอบงานซ่อม" → `removeActivityLogsByTicketId(..., {onlyDefectAlerts:true})` ลบเฉพาะ `INSPECTION_DEFECT` ที่ผูก ticketId นั้น (เก็บ "ส่งมอบงาน"+"รับอนุมัติ" ไว้เป็นหลักฐาน)
+  - GAS template **ไม่ต้องแก้/Re-deploy** (READ_ALL + ACTION ครบอยู่แล้ว)
+  - การตรวจ: `node --check` ผ่านครบทุกไฟล์ (9/9) |
+| v0.7.25 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
 - **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**

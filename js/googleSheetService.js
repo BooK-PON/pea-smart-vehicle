@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.23
+ * Build Version: v0.7.24
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -920,6 +920,10 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 if (localTs && remoteTs && remoteTs < localTs) {
                     const keep = Object.assign({}, normalized, local);
                     keep.updatedAt = local.updatedAt || normalized.updatedAt || '';
+                    // มาตรวัดระยะทางเป็นแบบเพิ่มทางเดียวเท่านั้น => กัน "กม.ถอยหลัง" เวลานาฬิกาเครื่องเหลื่อมกัน
+                    const lKm = Number(keep.mileage) || 0;
+                    const rKm = Number(normalized.mileage) || 0;
+                    if (rKm > lKm) keep.mileage = rKm;
                     merged.push(keep);
                     return;
                 }
@@ -930,6 +934,10 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                         filled[f] = local[f];
                     }
                 });
+                // กัน "กม.ถอยหลัง": ไม่ยอมให้เลขไมล์remote ที่ต่ำกว่า ทับเลขไมล์ local ที่สูงกว่า
+                const lKm2 = Number(local.mileage) || 0;
+                const rKm2 = Number(filled.mileage) || 0;
+                if (lKm2 > rKm2) filled.mileage = lKm2;
                 merged.push(filled);
                 return;
             }

@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.23
+ * Build Version: v0.7.24
  */
 
 class PEASmartVehicleApp {
@@ -29,7 +29,7 @@ class PEASmartVehicleApp {
         try { this.renderActivityLogs(); } catch(e) { console.error('[PEA] Logs error:', e); }
         try { this.renderActiveTripsTab(); } catch(e) { console.error('[PEA] Active trips error:', e); }
 try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error:', e); }
-        try { this.autoLoadFromGoogleSheetIfNewDay(); } catch(e) { console.error('[PEA] Auto GSheet load error:', e); }
+        try { this.setupAutoSync(); } catch(e) { console.error('[PEA] Auto GSheet load error:', e); }
         try { this.checkFleetAlerts(); } catch(e) { console.error('[PEA] Fleet email alert scan error:', e); }
 
         console.log(`[PEA Smart Vehicle] Initialized version ${APP_BUILD_VERSION}`);
@@ -274,14 +274,10 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
         const modelEl = document.getElementById('active-vehicle-model');
         if (modelEl) modelEl.innerText = `${v.model} • ${typeInfo.category}`;
 
-        const driverInput = document.getElementById('inspector-name-input');
+const driverInput = document.getElementById('inspector-name-input');
         const empIdInput = document.getElementById('employee-id-input');
-        // เงื่อนไข: หากไม่มีการกรอกรหัสพนักงาน ให้ช่องรหัสและช่องชื่อว่างเปล่าเสมอ
-        if (empIdInput && !empIdInput.value.trim()) {
-            empIdInput.value = '';
-            if (driverInput) driverInput.value = '';
-            this.handleEmployeeIdInput('');
-        } else if (empIdInput && empIdInput.value.trim()) {
+        // ถ้ามีรหัสพนักงาน ให้รีเฟรช badge/ตำแหน่งตามรหัส แต่ไม่ล้างชื่อที่ผู้ใช้พิมพ์ไว้
+        if (empIdInput && empIdInput.value.trim()) {
             this.handleEmployeeIdInput(empIdInput.value.trim());
         }
 
@@ -756,9 +752,23 @@ handlePhotoUpload(event) {
             return;
         }
 
-        const mileage = endMileage;
-        const inspector = inspectorInput ? inspectorInput.value.trim() : v.driver;
-        const employeeId = employeeIdInput ? employeeIdInput.value.trim() : '512446';
+const mileage = endMileage;
+        const inspector = inspectorInput ? inspectorInput.value.trim() : '';
+        const employeeId = employeeIdInput ? employeeIdInput.value.trim() : '';
+
+        // บังคับรหัส + ชื่อผู้ปฏิบัติงานจริง (เดิม fallback เป็น '512446' / v.driver ทำให้ข้อมูลผู้บันทึกผิดคน)
+        if (!employeeId) {
+            notifier.showToast('กรุณากรอกรหัสพนักงาน', 'ต้องระบุรหัสพนักงานผู้ตรวจสภาพจริงก่อนส่งรายงาน', 'WARNING');
+            if (employeeIdInput) employeeIdInput.focus();
+            return;
+        }
+        if (!inspector) {
+            notifier.showToast('กรุณาระบุชื่อผู้ตรวจสภาพ', 'ต้องระบุชื่อจริงของผู้ปฏิบัติงาน', 'WARNING');
+            if (inspectorInput) inspectorInput.focus();
+            return;
+        }
+        this.ensureEmployeeRegistered(employeeId, inspector);
+
         const taskDescription = taskDescriptionInput ? taskDescriptionInput.value.trim() : 'ปฏิบัติงานประจำวัน';
 
         const fuelLevel = parseInt(fuelSelect ? fuelSelect.value : (v.fuelLevel !== undefined ? v.fuelLevel : 100));
@@ -1302,7 +1312,7 @@ handleMechanicPhotoUpload(event, itemIdx) {
         ticket.mechanicCompletedAt = new Date().toLocaleString('th-TH');
         db.saveRepairTicket(ticket);
 
-        // LOG CONSOLIDATION: บันทึกประวัติงานซ่อมเป็น 1 แถวเดียว
+// LOG CONSOLIDATION: บันทึกประวัติงานซ่อมเป็น 1 แถวเดียว
         db.addConsolidatedActivityLog({
             actionType: 'REPAIR_RESOLVED_PENDING_APPROVAL',
             vehicleId: ticket.vehicleId,
@@ -1313,6 +1323,13 @@ handleMechanicPhotoUpload(event, itemIdx) {
             statusResult: 'PENDING_APPROVAL',
             ticketId: ticket.ticketId
         });
+
+        // ลบประวัติข้อบกพร่องเดิม (INSPECTION_DEFECT) ที่ถูกผูกกับ workOrder นี้ทิ้ง
+        // (เก็บเฉพาะ "ส่งมอบงาน" + "รับอนุมัติ" ไว้เป็นหลักฐาน ตามมติผู้ใช้งาน — กันประวัติอุดตัน)
+        try {
+            const removed = db.removeActivityLogsByTicketId(ticket.ticketId, { onlyDefectAlerts: true });
+            if (removed) this.renderActivityLogs();
+        } catch(e) { console.warn('[PEA] Clean defect logs error:', e); }
 
         // Broadcast to Supervisor
         notifier.broadcastAlert({
@@ -2433,46 +2450,121 @@ exportGoogleSheetCSV() {
             return { success: false, reason: 'EMPTY' };
         }
 
-        // แยกข้อมูลออกจาก payload (เวอร์ชันใหม่มี repairs ด้วย ส่วนเวอร์ชันเก่าไม่มี => ว่าง)
+        // แยกข้อมูลออกจาก payload (อ่านครบทั้ง 5 ประเภท: รถ/พนักงาน/ซ่อม/ขาออก/ตรวจสภาพ)
         const remoteVehicles = (payload.data && Array.isArray(payload.data.vehicles)) ? payload.data.vehicles : [];
         const remoteEmployees = (payload.data && Array.isArray(payload.data.employees)) ? payload.data.employees : [];
         const remoteRepairs = (payload.data && Array.isArray(payload.data.repairs)) ? payload.data.repairs : [];
-        // กันข้อมูลทดสอบ (TEST-*) ที่เกิดจากปุ่ม "ทดสอบส่งข้อมูลทดสอบ" เข้ามาปนกับฟลีตจริง
-        const realRemoteVehicles = remoteVehicles.filter(v => !(v && v.id && String(v.id).indexOf('TEST-') === 0));
+        const remoteDepartures = (payload.data && Array.isArray(payload.data.departures)) ? payload.data.departures : [];
+        const remoteInspections = (payload.data && Array.isArray(payload.data.inspections)) ? payload.data.inspections : [];
+
+        // กรอง "ประวัติทดลอง" (TEST-*) ให้ครบทุกประเภท — เข้าเฉพาะข้อมูลจริง
+        const isTestRecord = (row) => {
+            if (!row) return false;
+            const idFields = ['id', 'vehicleId', 'plate', 'reportNo', 'ticketId', 'missionId', 'model'];
+            for (let i = 0; i < idFields.length; i++) {
+                const val = row[idFields[i]];
+                if (val !== undefined && val !== null && String(val).toUpperCase().indexOf('TEST-') === 0) return true;
+            }
+            if (typeof row.plate === 'string' && row.plate.indexOf('ทดสอบ') >= 0) return true;
+            const op = row.operatorName || row.driver || row.operator;
+            if (op && String(op).indexOf('ระบบทดสอบ') >= 0) return true;
+            return false;
+        };
+        const realRemoteVehicles = remoteVehicles.filter(v => !isTestRecord(v));
+        const realRemoteEmployees = remoteEmployees.filter(e => !isTestRecord(e));
+        const realRemoteRepairs = remoteRepairs.filter(r => !isTestRecord(r));
+        const realRemoteDepartures = remoteDepartures.filter(d => !isTestRecord(d));
+        const realRemoteInspections = remoteInspections.filter(i => !isTestRecord(i));
         const localVehicles = db.getVehicles();
         const localEmployees = db.getEmployees();
 
         try {
-            const merged = googleSheet.mergeVehiclesFromSnapshot(realRemoteVehicles, localVehicles);
-            if (!merged || merged.length === 0) {
-                show('INFO', 'ไม่มีข้อมูลให้โหลด', 'Google Sheet ไม่มีรายการรถที่นำมาใช้ได้ ไม่แตะข้อมูลในเครื่อง');
+            let merged = [];
+            try { merged = googleSheet.mergeVehiclesFromSnapshot(realRemoteVehicles, localVehicles) || []; } catch(e) { console.warn('[PEA] Merge vehicles error:', e); }
+
+            const hasAnyData = merged.length > 0 || realRemoteEmployees.length > 0 || realRemoteRepairs.length > 0 || realRemoteDepartures.length > 0 || realRemoteInspections.length > 0;
+            if (!hasAnyData) {
+                show('INFO', 'ไม่มีข้อมูลให้โหลด', 'Google Sheet ยังไม่มีข้อมูลจริงให้โหลด (กรองประวัติทดลองออกแล้ว) ไม่แตะข้อมูลในเครื่อง');
                 return { success: false, reason: 'EMPTY', count: 0 };
             }
 
-            const saved = db.replaceVehiclesFromRemote(merged);
-            if (!saved) {
-                show('WARNING', 'โหลดข้อมูลล้มเหลว', 'สงวนข้อมูลเดิมไว้ เนื่องจากข้อมูลที่รับมาไม่ถูกต้อง');
-                return { success: false, reason: 'EMPTY' };
+            if (merged.length > 0) {
+                const saved = db.replaceVehiclesFromRemote(merged);
+                if (!saved) {
+                    show('WARNING', 'โหลดข้อมูลล้มเหลว', 'สงวนข้อมูลเดิมไว้ เนื่องจากข้อมูลที่รับมาไม่ถูกต้อง');
+                    return { success: false, reason: 'EMPTY' };
+                }
             }
 
             // นำเข้าพนักงานจากชีต (เพิ่มคนที่เครื่องยังไม่มี ไม่ลบทับคนที่แก้ไขในเครื่อง)
             let empImported = 0;
-            const mergedEmployees = googleSheet.mergeEmployeesFromSnapshot(remoteEmployees, localEmployees);
+            const mergedEmployees = googleSheet.mergeEmployeesFromSnapshot(realRemoteEmployees, localEmployees);
             if (mergedEmployees && mergedEmployees.length > 0) {
                 const beforeEmp = db.getEmployees().length;
                 const savedEmp = db.replaceEmployeesFromRemote(mergedEmployees);
                 empImported = savedEmp ? Math.max(0, mergedEmployees.length - beforeEmp) : 0;
             }
 
+            // นำเข้ารถที่กำลังออกปฏิบัติงาน (Active Trips) จากชีต
+            let tripImported = 0, tripClosed = 0;
+            try {
+                const missionResult = db.mergeActiveMissionsFromRemote(realRemoteDepartures, db.getActiveMissions());
+                if (missionResult) {
+                    tripImported = missionResult.added || 0;
+                    tripClosed = missionResult.removed || 0;
+                }
+            } catch(e) { console.warn('[PEA] Import active trips error:', e); }
+
+            // นำเข้าประวัติตรวจสภาพ (Inspections) จากชีต => สังเคราะห์เป็นรายการประวัติใน Logs
+            // (logId 'GS-INSP-<reportNo>' กันซ้ำทุกครั้งที่ pull / เขียนตรง ไม่ trigger enqueue กัน echo)
+            let inspectionImported = 0;
+            try {
+                if (realRemoteInspections.length > 0) {
+                    const logs = db.getActivityLogs();
+                    const have = {};
+                    (logs || []).forEach(l => { if (l && l.logId) have[l.logId] = true; });
+                    const mergedLogs = logs.slice();
+                    realRemoteInspections.forEach(insp => {
+                        if (!insp || !insp.reportNo) return;
+                        const logId = 'GS-INSP-' + String(insp.reportNo);
+                        if (have[logId]) return;
+                        have[logId] = true;
+                        const sKm = (x) => (Number(x) || 0).toLocaleString();
+                        const delta = insp.mileageDelta !== undefined && insp.mileageDelta !== null && insp.mileageDelta !== '' ? Number(insp.mileageDelta) : null;
+                        const defectsRaw = insp.defects != null ? String(insp.defects).trim() : '';
+                        const hasDefects = defectsRaw !== '' && defectsRaw !== 'ผ่านเกณฑ์ 100% ไม่พบชำรุด';
+                        if (mergedLogs.length >= 100) mergedLogs.pop();
+                        mergedLogs.push({
+                            logId: logId,
+                            timestamp: insp.timestamp || '',
+                            actionType: hasDefects ? 'INSPECTION_DEFECT' : 'INSPECTION_PASS',
+                            vehicleId: insp.vehicleId || '',
+                            plate: insp.plate || '',
+                            operator: (insp.driver || 'พนักงาน กฟภ.') + ' (รหัส ' + (insp.employeeId || '-') + ')',
+                            role: 'DRIVER',
+                            reportNo: insp.reportNo,
+                            summary: '[SYNC ตรวจสภาพ] ' + (insp.taskDescription || 'ปฏิบัติงานประจำวัน') + ' • ระยะทาง: ' + sKm(insp.startMileage) + ' ➔ ' + sKm(insp.endMileage) + ' กม.' + (delta !== null ? ' (วิ่ง ' + sKm(delta) + ' กม.)' : '') + (hasDefects ? ' • จุดชำรุด: ' + defectsRaw : '') + (Number(insp.fuelRefill) ? ' • เติม ' + insp.fuelRefill + ' ลิตร' : ''),
+                            statusResult: String(insp.status || 'READY').toUpperCase()
+                        });
+                        inspectionImported++;
+                    });
+                    if (inspectionImported > 0) {
+                        mergedLogs.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+                        if (mergedLogs.length > 100) mergedLogs.length = 100;
+                        localStorage.setItem(db.STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(mergedLogs));
+                    }
+                }
+            } catch(e) { console.warn('[PEA] Import inspections error:', e); }
+
             // นำเข้าประวัติซ่อมจากชีต (เฉพาะรายการที่เครื่องยังไม่มี, เขียนตรงเพื่อกัน echo loop)
             let repairImported = 0;
-            if (remoteRepairs.length > 0) {
+            if (realRemoteRepairs.length > 0) {
                 try {
                     const tickets = db.getRepairTickets();
                     const haveIds = {};
                     tickets.forEach(t => { if (t.ticketId) haveIds[t.ticketId] = true; });
                     const newTickets = tickets.slice();
-                    remoteRepairs.forEach(r => {
+                    realRemoteRepairs.forEach(r => {
                         if (!r || !r.ticketId || haveIds[r.ticketId]) return;
                         haveIds[r.ticketId] = true;
                         newTickets.push({
@@ -2504,8 +2596,8 @@ exportGoogleSheetCSV() {
                 } catch(e) { console.warn('[PEA] Import repairs error:', e); }
             }
 
-            // อัปโหลดรถ/พนักงานที่เครื่องมีแต่ชีตยังไม่มีขึ้นไป (ให้ชีตตรงกับข้อมูลจริง)
-            let uploadedVehicles = 0, uploadedEmployees = 0;
+            // อัปโหลดรถ/พนักงาน/ภารกิจขาออกที่เครื่องมีแต่ชีตยังไม่มีขึ้นไป (ให้ชีตตรงกับข้อมูลจริง)
+            let uploadedVehicles = 0, uploadedEmployees = 0, uploadedMissions = 0;
             try {
                 const remoteVehicleIds = {};
                 (realRemoteVehicles || []).forEach(v => { if (v && v.id) remoteVehicleIds[String(v.id)] = true; });
@@ -2516,11 +2608,28 @@ exportGoogleSheetCSV() {
                     }
                 }
                 const remoteEmpIds = {};
-                (remoteEmployees || []).forEach(e => { if (e && e.id) remoteEmpIds[String(e.id).trim()] = true; });
+                (realRemoteEmployees || []).forEach(e => { if (e && e.id) remoteEmpIds[String(e.id).trim()] = true; });
                 for (const e of (db.getEmployees() || [])) {
                     if (e && e.id && !remoteEmpIds[String(e.id).trim()]) {
                         const up = await googleSheet.sendToGoogleSheet('EMPLOYEE', e);
                         if (up && up.success) uploadedEmployees++;
+                    }
+                }
+                const remoteMissionIds = {};
+                (realRemoteDepartures || []).forEach(d => { if (d && d.missionId) remoteMissionIds[String(d.missionId)] = true; });
+                for (const m of (db.getActiveMissions() || [])) {
+                    if (m && m.id && !remoteMissionIds[String(m.id)]) {
+                        const up = await googleSheet.sendToGoogleSheet('DEPARTURE', {
+                            missionId: m.id,
+                            vehicleId: m.vehicleId,
+                            plate: m.plate,
+                            model: m.model,
+                            employeeId: m.employeeId,
+                            operatorName: m.operatorName,
+                            taskDescription: m.taskDescription,
+                            startMileage: m.startMileage
+                        });
+                        if (up && up.success) uploadedMissions++;
                     }
                 }
             } catch(e) { console.warn('[PEA] Upload local-only data error:', e); }
@@ -2540,7 +2649,7 @@ exportGoogleSheetCSV() {
                     plate: '-',
                     operator: 'ระบบ',
                     role: 'SYSTEM',
-                    summary: `ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง รถ ${merged.length} คัน` + (empImported ? `, พนักงาน +${empImported} คน` : '') + (repairImported ? `, ซ่อม +${repairImported} รายการ` : '') + (uploadedVehicles ? `, อัปโหลดรถขึ้นชีต ${uploadedVehicles} คัน` : ''),
+                    summary: 'ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง รถ ' + merged.length + ' คัน' + (tripImported ? ', รถออกงาน +' + tripImported + ' คัน' : '') + (tripClosed ? ', ปิดภารกิจที่จบแล้ว ' + tripClosed + ' คัน' : '') + (inspectionImported ? ', ตรวจสภาพ +' + inspectionImported + ' รายการ' : '') + (empImported ? ', พนักงาน +' + empImported + ' คน' : '') + (repairImported ? ', ซ่อม +' + repairImported + ' รายการ' : '') + (uploadedVehicles ? ', อัปโหลดรถขึ้นชีต ' + uploadedVehicles + ' คัน' : '') + (uploadedMissions ? ', อัปโหลดภารกิจขึ้นชีต ' + uploadedMissions + ' คัน' : ''),
                     statusResult: 'SUCCESS'
                 };
                 logs.unshift(entry);
@@ -2549,13 +2658,17 @@ exportGoogleSheetCSV() {
                 try { this.renderActivityLogs(); } catch(e) {}
             } catch(e) { console.warn('[PEA] Activity log after import error:', e); }
 
-            const msgParts = [`นำเข้ารถ ${merged.length} คัน`];
-            if (empImported > 0) msgParts.push(`พนักงาน +${empImported} คน`);
-            if (repairImported > 0) msgParts.push(`ซ่อม +${repairImported} รายการ`);
-            if (uploadedVehicles > 0) msgParts.push(`อัปโหลดรถขึ้นชีต ${uploadedVehicles} คัน`);
+            const msgParts = ['นำเข้ารถ ' + merged.length + ' คัน'];
+            if (tripImported > 0) msgParts.push('ออกงาน +' + tripImported + ' คัน');
+            if (tripClosed > 0) msgParts.push('ปิดภารกิจที่จบแล้ว ' + tripClosed + ' คัน');
+            if (inspectionImported > 0) msgParts.push('ประวัติตรวจ +' + inspectionImported + ' รายการ');
+            if (empImported > 0) msgParts.push('พนักงาน +' + empImported + ' คน');
+            if (repairImported > 0) msgParts.push('ซ่อม +' + repairImported + ' รายการ');
+            if (uploadedVehicles > 0) msgParts.push('อัปโหลดรถขึ้นชีต ' + uploadedVehicles + ' คัน');
+            if (uploadedMissions > 0) msgParts.push('อัปโหลดภารกิจขึ้นชีต ' + uploadedMissions + ' คัน');
             msgParts.push('ลงเครื่องเรียบร้อย');
             show('SUCCESS', 'โหลดข้อมูลจาก Google Sheet สำเร็จ', msgParts.join(', '));
-            return { success: true, count: merged.length, employees: empImported, repairs: repairImported };
+            return { success: true, count: merged.length, employees: empImported, repairs: repairImported, trips: tripImported, inspections: inspectionImported };
         } catch (e) {
             console.error('[PEA] importFromGoogleSheet error:', e);
             show('CRITICAL', 'โหลดข้อมูลไม่สำเร็จ', 'เกิดข้อผิดพลาดระหว่างนำเข้าข้อมูล (ข้อมูลในเครื่องคงเดิม)');
@@ -2563,28 +2676,38 @@ exportGoogleSheetCSV() {
         }
     }
 
-    // Auto-load: เปิดแอปครั้งแรกของวัน จะโหลดจาก Google Sheets อัตโนมัติ (ครั้งเดียว/วัน, เงียบ)
-    async autoLoadFromGoogleSheetIfNewDay() {
-        const KEY = 'pea_last_gsheet_autoload_date';
-        try {
-            if (typeof googleSheet === 'undefined' || !googleSheet.isConnected()) return;
-        } catch(e) { return; }
+    // Auto-sync: โหลดข้อมูลจาก Google Sheets บ่อย ๆ (เปิดหน้า / โฟกัสแท็บ / ทุก 60 วิ เมื่อออนไลน์)
+    // เพื่อให้ข้อมูลทุกเครื่องตรงกันแบบเกือบเรียลไทม์ (เดิมโหลดวันละครั้งเท่านั้น ทำให้เห็นข้อมูลคนอื่นช้า)
+    setupAutoSync() {
+        this._syncingPull = false;
+        this._lastSyncTs = 0;
+        const MIN_GAP_MS = 45000;
 
-        const today = new Date().toLocaleDateString('th-TH');
-        let last = '';
-        try { last = localStorage.getItem(KEY) || ''; } catch(e) {}
-        if (last === today) {
-            console.log('[PEA GSheet] โหลดอัตโนมัติแล้วในวันนี้ (ข้าม)');
-            return;
-        }
+        const pull = async () => {
+            const now = Date.now();
+            if (this._syncingPull) return;
+            if (this._lastSyncTs && (now - this._lastSyncTs) < MIN_GAP_MS) return;
+            if (typeof db === 'undefined' || !db.isOnline()) return;
+            this._lastSyncTs = now;
+            this._syncingPull = true;
+            try {
+                const result = await this.importFromGoogleSheet(false);
+                if (result && result.success) {
+                    console.log('[PEA Auto-sync] ซิงก์จาก Google Sheets สำเร็จ (รถ ' + (result.count || 0) + ' คัน)');
+                } else {
+                    console.log('[PEA Auto-sync] ข้ามรอบนี้:', result && result.reason ? result.reason : 'unknown');
+                }
+            } catch (e) {
+                console.warn('[PEA Auto-sync] error:', e);
+            } finally {
+                this._syncingPull = false;
+            }
+        };
 
-        const result = await this.importFromGoogleSheet(false);
-        if (result && result.success) {
-            try { localStorage.setItem(KEY, today); } catch(e) {}
-        } else {
-            // offline / ไม่มี URL / ข้อมูลไม่พร้อม => ไม่ over-ride แฟลก ปล่อยให้ลองอีกทีในวันนี้ (ใส่ console เท่านั้น)
-            console.log('[PEA GSheet] auto-load วันนี้ยังไม่สำเร็จ:', result && result.reason ? result.reason : 'unknown');
-        }
+        try { window.addEventListener('focus', pull); } catch(e) {}
+        try { document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); }); } catch(e) {}
+        try { setInterval(pull, 60000); } catch(e) {}
+        pull();
     }
 
     // =========================================================================
@@ -2671,9 +2794,9 @@ exportGoogleSheetCSV() {
         const msgEl = document.getElementById('emp-lookup-msg');
         const deptEl = document.getElementById('emp-dept-msg');
 
-        if (!cleanId) {
+if (!cleanId) {
+            // ไม่มีรหัส: ชื่อเป็นอิสระ — ไม่ล้างชื่อที่ผู้ใช้พิมพ์ไว้ (เดิมล้างค่าให้ว่าง ทำให้รู้สึกเป็นค่าตายตัว)
             if (nameInput) {
-                nameInput.value = '';
                 nameInput.classList.remove('border-emerald-500', 'border-red-500');
                 nameInput.classList.add('border-slate-700');
             }
@@ -2695,8 +2818,11 @@ exportGoogleSheetCSV() {
         }
 
         if (emp) {
-            if (nameInput) {
+            // พบในฐานข้อมูล: เติมชื่อให้อัตโนมัติ เฉพาะเมื่อช่องชื่อยังว่าง (ไม่ทับชื่อที่ผู้ใช้พิมพ์เอง)
+            if (nameInput && !nameInput.value.trim()) {
                 nameInput.value = emp.name;
+            }
+            if (nameInput) {
                 nameInput.classList.remove('border-slate-700', 'border-red-500');
                 nameInput.classList.add('border-emerald-500', 'bg-slate-900/90');
             }
@@ -2714,12 +2840,10 @@ exportGoogleSheetCSV() {
                 deptEl.innerHTML = `<i class="fa-solid fa-building text-amber-400"></i> <span>สังกัด: ${emp.dept || 'การไฟฟ้าส่วนภูมิภาค'}</span>`;
             }
         } else {
-            // กรณีไม่พบรหัสพนักงาน: ล้างชื่อให้ว่างเปล่าตามเงื่อนไข
+            // กรณีไม่พบรหัส: ไม่ล้างชื่อที่พิมพ์ไว้ ให้ผู้ใช้พิมพ์ชื่อเองได้ และเมื่อบันทึก ระบบจะขึ้นทะเบียนให้อัตโนมัติ
             if (nameInput) {
-                nameInput.value = '';
                 nameInput.classList.remove('border-emerald-500');
                 nameInput.classList.add('border-slate-700');
-                nameInput.placeholder = 'ระบุชื่อ-นามสกุล';
             }
             if (badgeEl) {
                 badgeEl.classList.remove('hidden', 'bg-emerald-950/80', 'text-emerald-300', 'border-emerald-500/40');
@@ -2728,12 +2852,50 @@ exportGoogleSheetCSV() {
             }
             if (msgEl) {
                 msgEl.className = 'text-[10px] mt-1 text-amber-400 flex items-center gap-1 font-medium animate-pulse';
-                msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-400"></i> <span>ไม่พบข้อมูลพนักงาน กรุณาตรวจสอบรหัสอีกครั้ง</span>`;
+                msgEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-400"></i> <span>ไม่พบข้อมูลพนักงาน กรุณาตรวจสอบรหัสอีกครั้ง - พิมพ์ชื่อเองได้ ระบบจะขึ้นทะเบียนใหม่ให้เมื่อบันทึก</span>`;
             }
             if (deptEl) {
                 deptEl.className = 'text-[10px] mt-1 text-slate-400';
-                deptEl.innerHTML = `<span>(สามารถพิมพ์ระบุชื่อผู้ปฏิบัติงานเองได้)</span>`;
+                deptEl.innerHTML = `<span>(กรอกรหัสใหม่พร้อมชื่อ จะถูกบันทึกลงฐานข้อมูลทันที)</span>`;
             }
+        }
+    }
+
+    // ขึ้นทะเบียนพนักงานใหม่กรณีกรอกรหัสใหม่ (ยังไม่เคยมีในระบบ) พร้อมชื่อ — บันทึกลงฐานข้อมูล + ซิงก์ชีตทันที
+    // กันรหัสซ้ำ: ถ้ารหัสมีอยู่แล้ว (db หรือ PEA_EMPLOYEES) จะไม่สร้างซ้ำ
+    ensureEmployeeRegistered(employeeId, employeeName) {
+        try {
+            const id = String(employeeId || '').trim();
+            const name = String(employeeName || '').trim();
+            if (!id || !name) return null;
+            if (db.getEmployeeById(id)) return null;
+            if (typeof PEA_EMPLOYEES !== 'undefined' && PEA_EMPLOYEES[id]) return null;
+
+            const employee = { id: id, name: name, position: 'พนักงาน กฟภ.', dept: 'การไฟฟ้าส่วนภูมิภาค' };
+            db.saveEmployee(employee);
+
+            // ซิงก์ขึ้น Google Sheets (แอคชัน EMPLOYEE มีอยู่แล้วใน GAS)
+            if (typeof googleSheet !== 'undefined') {
+                googleSheet.sendToGoogleSheet('EMPLOYEE', employee).catch(e => console.warn('[PEA] Auto-register sync warning:', e));
+            }
+
+            try {
+                db.addConsolidatedActivityLog({
+                    actionType: 'ADD_EMPLOYEE',
+                    vehicleId: '-',
+                    plate: '-',
+                    operator: 'ผู้ปฏิบัติงาน (ระบบอัตโนมัติ)',
+                    role: 'DRIVER',
+                    summary: 'ขึ้นทะเบียนพนักงานใหม่รหัส ' + id + ': ' + name + ' (อัตโนมัติจากฟอร์มบันทึก)',
+                    statusResult: 'READY'
+                });
+            } catch(e) { console.warn('[PEA] Auto-register log error:', e); }
+
+            notifier.showToast('ขึ้นทะเบียนพนักงานใหม่', 'รหัส ' + id + ': ' + name + ' ถูกบันทึกลงฐานข้อมูลแล้ว', 'SUCCESS');
+            return employee;
+        } catch(e) {
+            console.warn('[PEA] ensureEmployeeRegistered error:', e);
+            return null;
         }
     }
 
@@ -2964,8 +3126,8 @@ exportGoogleSheetCSV() {
     // Active Vehicles / Out on Duty Tracking & Return Mileage Shortcut System
     // =========================================================================
     
-    // 1. บันทึกรถออกปฏิบัติงาน (Departure)
-    recordDeparture() {
+// 1. บันทึกรถออกปฏิบัติงาน (Departure)
+    async recordDeparture() {
         if (!this.currentVehicle) {
             notifier.showToast('แจ้งเตือน', 'กรุณาเลือกยานพาหนะก่อนบันทึกออกปฏิบัติงาน', 'WARNING');
             return;
@@ -2994,11 +3156,31 @@ exportGoogleSheetCSV() {
             return;
         }
 
-        if (isNaN(startMileage) || startMileage < 0) {
+if (isNaN(startMileage) || startMileage < 0) {
             notifier.showToast('เลขไมล์ไม่ถูกต้อง', 'กรุณาระบุเลขไมล์เริ่มต้นให้ถูกต้อง', 'WARNING');
             if (startMileageInput) startMileageInput.focus();
             return;
         }
+
+        // ขึ้นทะเบียนพนักงานใหม่ทันที กรณีกรอกรหัสใหม่พร้อมชื่อ (รหัสไม่ซ้ำในระบบ)
+        this.ensureEmployeeRegistered(employeeId, operatorName);
+
+        // ตรวจจาก Google Sheets ว่ารถคันนี้ถูกคนอื่นนำออกไปแล้วหรือยัง (บล็อก; offline ปล่อยผ่าน)
+        try {
+            if (typeof googleSheet !== 'undefined' && googleSheet.isConnected()) {
+                notifier.showToast('กำลังตรวจสอบสถานะรถจาก Google Sheets...', 'กรุณารอสักครู่', 'INFO');
+                const snap = await googleSheet.readSnapshot(12000);
+                const pk = snap && (snap.payload || snap.data || snap);
+                const deps = (pk && pk.data && Array.isArray(pk.data.departures)) ? pk.data.departures : [];
+                const activeDep = deps.find(d => d && String(d.vehicleId) === String(v.id) && !(d.endMileage !== undefined && d.endMileage !== null && d.endMileage !== ''));
+                if (activeDep) {
+                    const who = activeDep.operatorName || activeDep.driver || 'ผู้ปฏิบัติงานท่านอื่น';
+                    const when = activeDep.timestamp || 'ไม่ทราบเวลา';
+                    notifier.showToast('รถคันนี้กำลังออกปฏิบัติงานอยู่แล้ว', who + ' กำลังใช้รถคันนี้อยู่ (เวลา ' + when + ') กรุณาเลือกคันอื่น', 'CRITICAL');
+                    return;
+                }
+            }
+        } catch(e) { console.warn('[PEA] Departure conflict check skipped:', e); }
 
         // Check if already in active mission
         const existingMission = db.getActiveMissionByVehicleId(v.id);
