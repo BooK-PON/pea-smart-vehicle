@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.17
+ * Build Version: v0.7.19
  */
 
 class PEASmartVehicleApp {
@@ -2353,11 +2353,17 @@ exportGoogleSheetCSV() {
             return { success: false, reason: 'EMPTY' };
         }
 
+        // แยกข้อมูลออกจาก payload (เวอร์ชันใหม่มี repairs ด้วย ส่วนเวอร์ชันเก่าไม่มี => ว่าง)
         const remoteVehicles = (payload.data && Array.isArray(payload.data.vehicles)) ? payload.data.vehicles : [];
+        const remoteEmployees = (payload.data && Array.isArray(payload.data.employees)) ? payload.data.employees : [];
+        const remoteRepairs = (payload.data && Array.isArray(payload.data.repairs)) ? payload.data.repairs : [];
+        // กันข้อมูลทดสอบ (TEST-*) ที่เกิดจากปุ่ม "ทดสอบส่งข้อมูลทดสอบ" เข้ามาปนกับฟลีตจริง
+        const realRemoteVehicles = remoteVehicles.filter(v => !(v && v.id && String(v.id).indexOf('TEST-') === 0));
         const localVehicles = db.getVehicles();
+        const localEmployees = db.getEmployees();
 
         try {
-            const merged = googleSheet.mergeVehiclesFromSnapshot(remoteVehicles, localVehicles);
+            const merged = googleSheet.mergeVehiclesFromSnapshot(realRemoteVehicles, localVehicles);
             if (!merged || merged.length === 0) {
                 show('INFO', 'ไม่มีข้อมูลให้โหลด', 'Google Sheet ไม่มีรายการรถที่นำมาใช้ได้ ไม่แตะข้อมูลในเครื่อง');
                 return { success: false, reason: 'EMPTY', count: 0 };
@@ -2368,6 +2374,76 @@ exportGoogleSheetCSV() {
                 show('WARNING', 'โหลดข้อมูลล้มเหลว', 'สงวนข้อมูลเดิมไว้ เนื่องจากข้อมูลที่รับมาไม่ถูกต้อง');
                 return { success: false, reason: 'EMPTY' };
             }
+
+            // นำเข้าพนักงานจากชีต (เพิ่มคนที่เครื่องยังไม่มี ไม่ลบทับคนที่แก้ไขในเครื่อง)
+            let empImported = 0;
+            const mergedEmployees = googleSheet.mergeEmployeesFromSnapshot(remoteEmployees, localEmployees);
+            if (mergedEmployees && mergedEmployees.length > 0) {
+                const beforeEmp = db.getEmployees().length;
+                const savedEmp = db.replaceEmployeesFromRemote(mergedEmployees);
+                empImported = savedEmp ? Math.max(0, mergedEmployees.length - beforeEmp) : 0;
+            }
+
+            // นำเข้าประวัติซ่อมจากชีต (เฉพาะรายการที่เครื่องยังไม่มี, เขียนตรงเพื่อกัน echo loop)
+            let repairImported = 0;
+            if (remoteRepairs.length > 0) {
+                try {
+                    const tickets = db.getRepairTickets();
+                    const haveIds = {};
+                    tickets.forEach(t => { if (t.ticketId) haveIds[t.ticketId] = true; });
+                    const newTickets = tickets.slice();
+                    remoteRepairs.forEach(r => {
+                        if (!r || !r.ticketId || haveIds[r.ticketId]) return;
+                        haveIds[r.ticketId] = true;
+                        newTickets.push({
+                            ticketId: r.ticketId,
+                            vehicleId: r.vehicleId || '',
+                            plate: r.plate || '',
+                            model: r.model || '',
+                            reporter: r.reporter || '',
+                            timestamp: r.timestamp || '',
+                            status: 'RESOLVED',
+                            severity: 'WARNING',
+                            items: [
+                                {
+                                    itemId: 'SYNC_GAS_' + r.ticketId,
+                                    name: r.items || 'ซ่อมแซมเสร็จสมบูรณ์',
+                                    category: 'SYNC',
+                                    critical: false,
+                                    description: '',
+                                    photoBefore: null,
+                                    photoAfter: null,
+                                    mechanicNote: null,
+                                    repairedAt: r.timestamp || ''
+                                }
+                            ]
+                        });
+                        repairImported++;
+                    });
+                    if (repairImported > 0) localStorage.setItem(db.STORAGE_KEYS.REPAIR_TICKETS, JSON.stringify(newTickets));
+                } catch(e) { console.warn('[PEA] Import repairs error:', e); }
+            }
+
+            // อัปโหลดรถ/พนักงานที่เครื่องมีแต่ชีตยังไม่มีขึ้นไป (ให้ชีตตรงกับข้อมูลจริง)
+            let uploadedVehicles = 0, uploadedEmployees = 0;
+            try {
+                const remoteVehicleIds = {};
+                (realRemoteVehicles || []).forEach(v => { if (v && v.id) remoteVehicleIds[String(v.id)] = true; });
+                for (const v of merged) {
+                    if (v && v.id && !remoteVehicleIds[String(v.id)]) {
+                        const up = await googleSheet.logVehicle(v);
+                        if (up && up.success) uploadedVehicles++;
+                    }
+                }
+                const remoteEmpIds = {};
+                (remoteEmployees || []).forEach(e => { if (e && e.id) remoteEmpIds[String(e.id).trim()] = true; });
+                for (const e of (db.getEmployees() || [])) {
+                    if (e && e.id && !remoteEmpIds[String(e.id).trim()]) {
+                        const up = await googleSheet.sendToGoogleSheet('EMPLOYEE', e);
+                        if (up && up.success) uploadedEmployees++;
+                    }
+                }
+            } catch(e) { console.warn('[PEA] Upload local-only data error:', e); }
 
             // อัปเดต UI ทั้งหมดที่เกี่ยวกับรถ
             try { this.renderSupervisorDashboard(); } catch(e) {}
@@ -2384,7 +2460,7 @@ exportGoogleSheetCSV() {
                     plate: '-',
                     operator: 'ระบบ',
                     role: 'SYSTEM',
-                    summary: `ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง ${merged.length} คัน`,
+                    summary: `ซิงก์ข้อมูลจาก Google Sheets ลงเครื่อง รถ ${merged.length} คัน` + (empImported ? `, พนักงาน +${empImported} คน` : '') + (repairImported ? `, ซ่อม +${repairImported} รายการ` : '') + (uploadedVehicles ? `, อัปโหลดรถขึ้นชีต ${uploadedVehicles} คัน` : ''),
                     statusResult: 'SUCCESS'
                 };
                 logs.unshift(entry);
@@ -2393,8 +2469,13 @@ exportGoogleSheetCSV() {
                 try { this.renderActivityLogs(); } catch(e) {}
             } catch(e) { console.warn('[PEA] Activity log after import error:', e); }
 
-            show('SUCCESS', 'โหลดข้อมูลจาก Google Sheet สำเร็จ', `นำเข้ารถ ${merged.length} คัน ลงเครื่องเรียบร้อย (อัปเดตเฉพาะรายการที่ใหม่กว่า)`);
-            return { success: true, count: merged.length };
+            const msgParts = [`นำเข้ารถ ${merged.length} คัน`];
+            if (empImported > 0) msgParts.push(`พนักงาน +${empImported} คน`);
+            if (repairImported > 0) msgParts.push(`ซ่อม +${repairImported} รายการ`);
+            if (uploadedVehicles > 0) msgParts.push(`อัปโหลดรถขึ้นชีต ${uploadedVehicles} คัน`);
+            msgParts.push('ลงเครื่องเรียบร้อย');
+            show('SUCCESS', 'โหลดข้อมูลจาก Google Sheet สำเร็จ', msgParts.join(', '));
+            return { success: true, count: merged.length, employees: empImported, repairs: repairImported };
         } catch (e) {
             console.error('[PEA] importFromGoogleSheet error:', e);
             show('CRITICAL', 'โหลดข้อมูลไม่สำเร็จ', 'เกิดข้อผิดพลาดระหว่างนำเข้าข้อมูล (ข้อมูลในเครื่องคงเดิม)');

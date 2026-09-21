@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.17 (Cache Busting)
+ * Build Version: v0.7.19 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.17';
+const APP_BUILD_VERSION = 'v0.7.19';
 
 class PEADatabase {
     constructor() {
@@ -282,6 +282,15 @@ class PEADatabase {
         return filtered;
     }
 
+    // ใช้สำหรับนำเข้าพนักงานจาก Google Sheets ลงเครื่องโดยตรง (ไม่ trigger enqueue กลับ)
+    replaceEmployeesFromRemote(employees) {
+        if (!Array.isArray(employees)) return false;
+        if (employees.length === 0) return false;
+        localStorage.setItem(this.STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+        console.log(`[PEA DB] อัปเดตพนักงานจาก Google Sheets: ${employees.length} คน`);
+        return true;
+    }
+
     // =========================================================================
     // Active Vehicle Missions (รถยนต์ที่กำลังออกไปปฏิบัติงาน Out on Duty)
     // =========================================================================
@@ -446,6 +455,9 @@ class PEADatabase {
             'UPDATE_VEHICLE': 'VEHICLE',
             // DELETE_VEHICLE ไม่มีตารางลบฝั่ง GAS ถ้าส่ง VEHICLE ไปจะถูก "เขียนใหม่" กลับไป = รถที่ลบแล้วกลับมาโผล่ => ข้าม
             'DELETE_VEHICLE': null,
+            'UPDATE_EMPLOYEE': 'EMPLOYEE',
+            // DELETE_EMPLOYEE เช่นกัน ฝั่ง GAS เป็น Upsert ล้วน => ไม่ส่งขึ้นไป จะไหลหลงกลับมาได้
+            'DELETE_EMPLOYEE': null,
             'SAVE_TICKET': 'REPAIR_APPROVAL',
             'ADD_LOG': null,
             'SAVE_INSPECTION': 'INSPECTION',

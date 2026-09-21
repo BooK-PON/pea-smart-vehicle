@@ -1,8 +1,9 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
-**บันทึกล่าสุดเมื่อ:** 2026-09-19 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.6.6 (Build PEA-SAFE)  
-**พาธโปรเจกต์:** c:\Users\512446\Desktop\AI ควบคุมยานพาหะนะ
+**บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.19  
+**พาธโปรเจกต์:** D:\PEA SMART
+**เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
 ---
 
@@ -274,3 +275,109 @@
 - [ ] **สถานะ PM_DUE** ให้แสดง "ต้องเข้ารับการตรวจเช็คสภาพรถ" ตอน badge/board/คิว (ตอนนี้ `pmDueCount` คำนวณแล้ว แต่ status ยังเป็น READY)
 - [ ] **NaN guard** "อีก NaN กม." หาก `lastPmMileage` undefined
 - [ ] **ตรวจภาษี + PM เรียกผ่านหลายจุด** (ตอนนี้ alert ถูกเรียกเฉพาะตอนบันทึกขากลับ) และ email ตั้งค่าแล้วจึงจะส่ง
+
+---
+
+## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
+
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.19)
+- **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
+  - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
+  - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
+  - **หมายเหตุ:** repo เป็น public + ไม่มีรหัสผ่าน (ตามที่ผู้ใช้ขอ "ให้ทุกคนใช้ได้") ถ้าต้องการจำกัดสิทธิ์ต้องเพิ่มระบบ Login ภายหลัง
+- **ฐานข้อมูลกลาง = Google Sheets** / แอปเป็นแบบ offline-first: เครื่องใคร = localStorage ของเครื่องนั้น แต่ข้อมูลที่บันทึก push ขึ้นชีตกลาง และปุ่ม "โหลดจาก Google Sheet" ดึงกลับมา
+- **GAS Web App URL ที่ฝังเป็นค่าเริ่มต้น (ผู้ใช้ไม่ต้องกรอก):**  
+  `https://script.google.com/macros/s/AKfycbwLoz2fsJtENGH-VFz4T9VozHGAvEXMR0PltRNGDtjC4XkUSXOvJR0092yJkKnZnynkRA/exec`  
+  อยู่ที่ `js/googleSheetService.js` → `this.DEFAULT_WEBAPP_URL` (ผู้ใช้สามารถเปลี่ยนเป็นของตัวเองได้ในเมนูตั้งค่า เก็บใน localStorage ต่อเครื่อง)
+
+### 8.2 ไทม์ไลน์เวอร์ชันล่าสุด (สรุป)
+| เวอร์ชัน | สิ่งที่ทำ |
+|---|---|
+| v0.7.9 | 2 ทาง GSheet (doGet READ_ALL แบบ JSONP/JSON + VEHICLE/DEPARTURE/INSPECTION POST) + auto-load เช้าแรก |
+| v0.7.11 | readSnapshot fetch-GET ก่อน + JSONP fallback; แก้ rows extraction จาก `payload.data.vehicles` (testConnectionFull, importFromGoogleSheet) |
+| v0.7.12 | ตรวจจับ **HTML_GATE** (Google interstitial/bot-check เมื่อ GAS ไม่ได้ Anyone) + เตือนสาเหตุชัดเจน ไม่แจ้งผลหลอก |
+| v0.7.13 | db.js: enqueueSync เก็บคิวเมื่อส่งไม่ขึ้น, DELETE_VEHICLE→null (กันรถที่ลบแล้วกลับมาโผล่), +SAVE_INSPECTION/SAVE_DEPARTURE mapping, processSyncQueue เช็ค `res.success` ถูกต้อง |
+| v0.7.14 | เปลี่ยนชื่อ tab ชีต → **`บันทึกการเข้า-ออกรถยนต์_Departures`** (มี `migrateDepartureTab()` เปลี่ยนชื่ออัตโนมัติใน GAS) |
+| v0.7.15 | เปิดเองผ่าน LAN server (`เปิดใช้งานระบบ.bat` → server.js + localhost:8080); `readSnapshotWithRetry(12000,3)` |
+| v0.7.16 | **Deploy GitHub Pages** + ฝัง `DEFAULT_WEBAPP_URL` เข้ารหัส |
+| v0.7.17 | **ระบบแจ้งเตือนอีเมล 2 บทบาท** (หัวหน้างาน + ช่างเครื่องยนต์), Fleet scan ตอนเปิดแอป, ปุ่มส่งอีเมลทดสอบ, GAS SEND_EMAIL รับ array |
+| v0.7.18 | ปุ่ม **"Google Sheet"** แสดงข้อความตลอดเวลาแม้หน้าจอแคบ (<1150px เดิมซ่อน label หาปุ่มไม่เจอ) |
+| v0.7.19 | **ปรับฐานข้อมูลให้ตรงกับข้อมูลจริง:**
+  - เพิ่มแอคชัน GAS **`EMPLOYEE`** — พนักงาน sync ขึ้นชีต `พนักงาน_Employees` ได้ (เดิมไม่มีทางเขียนเลย = ชีตว่าง)
+  - เพิ่ม **`Repairs` ใน READ_ALL** — `ประวัติการซ่อม_Repairs` อ่านกลับมาได้แล้ว (เดิม write-only) พร้อม `REPAIR_FIELD_MAP`
+  - **รวมหัวข้อคอลัมน์** `งานที่ต้องปฏิบัติ` → `งานที่ต้องปฏิบัติ (ภารกิจ)` ให้ตรงทุกแท็บ ผ่าน `standardizeHeaderNames()` (เปลี่ยนหัวข้อเก่าให้อัตโนมัติ)
+  - บังคับ `employeeId` เป็น **String** ตรงกันตอนเขียนชีต
+  - **Import ลงเครื่องครบ 3 ประเภท:** รถ + พนักงาน + ประวัติซ่อม (เดิมมีแค่รถ) + **กันข้อมูลทดสอบ `TEST-*`** ปนเข้ากองยานจริง
+  - **อัปโหลดรถ/พนักงานที่เครื่องมีแต่ชีตยังไม่มีขึ้นไป** ในการ import — ทำให้ชีตมีกองยานจริง ไม่ใช่แค่แถวทดสอบ
+  - **ซ่อม encoding reportGenerator.js** — ภาษาไทยทั้งไฟล์เป็น mojibake (double-encoding จากตอนกู้ zip) ใบรับรอง A4/PDF จึงแสดงภาษาไทยถูกต้อง 100% |
+
+### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
+- **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**
+  1. **PM:** `vehicle.mileage - vehicle.lastPmMileage >= 10000` กม. ("ระยะทางเกิน 1 หมื่น กม.")
+  2. **Tax:** `taxExpiry` เหลือ **≤ 7 วัน** (รวมขาดแล้ว: แสดง "เลยกำหนด X วัน")
+- **ผู้รับ = 2 บทบาทตายตัวเท่านั้น:** ช่างเครื่องยนต์ + หัวหน้างาน (ไม่ใช่ list หลายคน)
+  - เก็บใน localStorage แยกช่อง: `pea_alert_email_mechanic`, `pea_alert_email_chief`
+  - Getter รวม: `db.getAlertRecipients()` (ถ้าทั้งสองช่องว่าง → fallback ไป key เดิม `pea_alert_emails` แบบ , )
+  - **ตอนทดสอบ:** ผู้ใช้มีเฉพาะ `pon60562@gmail.com` → กรอกช่องทั้งสอง = pon60562@gmail.com
+- **เวลาเช็ค:** (1) **Fleet scan ทั้งกองยานตอนเปิดแอป** (`checkFleetAlerts()` ใน init — ส่ง 1 อีเมลสรุปถ้ามีคันถึงกำหนด) + (2) ทุกครั้ง "บันทึกขากลับ" สำหรับรถคันนั้น (`checkMaintenanceAlerts(vehicle)`)
+- **กันสแปม:** lock ใน localStorage — PM: `pea_alert_pm_{id}_{mileage}_{วัน}` / Tax: `pea_alert_tax_{id}_{วัน}` → **ส่งซ้ำวันละครั้ง** ตราบใดที่ยังไม่แก้เงื่อนไข (ตามที่ตกลงกับผู้ใช้)
+- **GAS:** แอคชัน `SEND_EMAIL` → `MailApp.sendEmail({ to: toList(Array) })` — รองรับ array แล้ว
+- **กล่องข้อความหลัก Gmail:** ส่งผ่าน GAAS จากบัญชีผู้ใช้เอง + เนื้อหา HTML เรียบง่าย → ควรเข้า Primary inbox (ยังต้องยืนยันจริงในการทดสอบ)
+- **UI:** ตั้งค่า Google Sheets modal → หัวข้อ **"4. อีเมลสำหรับรับแจ้งเตือน"** → 2 ช่อง (หัวหน้างาน / ช่างเครื่องยนต์) + ปุ่ม **บันทึกอีเมล** + ปุ่ม **ส่งอีเมลทดสอบ** (`sendTestAlertEmail()`)
+
+### 8.4 งานที่ค้าง/ต้องทำต่อพรุ่งนี้ (เรียงตามลำดับ) ★★★
+- [ ] **① Re-Deploy GAS เวอร์ชันล่าสุด (สำคัญมาก ยังไม่ยืนยันว่า user ทำแล้ว):**
+  - เปิด Google Sheet → Extensions > Apps Script → ลบโค้ดเก่า → วาง `APPS_SCRIPT_code_ready_to_paste.js` (ปัจจุบัน **387 บรรทัด**) ทั้งหมด → Save
+  - Deploy > **Manage deployments > แก้ deployment เดิม > Version = New version** (เพื่อให้ URL เดิมใช้งานได้ ไม่ต้องเปลี่ยนในระบบ!) → ตั้ง "Execute as Me" + "Anyone" → Deploy
+  - ไฟล์นี้ประกอบด้วย: SEND_EMAIL array (v0.7.17) + migrateDepartureTab/ชื่อ tab ใหม่ (v0.7.14) + doGet READ_ALL ทั้งหมด
+  - ⚠️ ถ้า URL เปลี่ยน (สร้าง deployment ใหม่แทนการแก้เก่า) → ต้องแก้ `DEFAULT_WEBAPP_URL` ใน js/googleSheetService.js + bump version + push ใหม่
+- [ ] **② ทดสอบ Email จริง (เป้าหมายหลักพรุ่งนี้):**
+  1. เปิด `https://book-pon.github.io/pea-smart-vehicle/` กด **Ctrl+F5** (ล้างแคช)
+  2. ปุ่ม **Google Sheet** (มุมขวาบน แสดง label คงที่แล้ว v0.7.18) → หัวข้อ **4**
+  3. กรอก `pon60562@gmail.com` ทั้ง 2 ช่อง (หัวหน้า + ช่าง) → **บันทึกอีเมล** → **ส่งอีเมลทดสอบ**
+  4. เช็ค Gmail → ต้องเข้า **กล่องข้อความหลัก (Primary)** ครับ
+  5. ถ้าเข้า tab อื่น → ทำให้ "สะอาด" ขึ้น (ลด HTML/ใส่ text/plain) เพื่อดันไป Primary
+- [ ] **③ ทดสอบเงื่อนไขจริง:** เพิ่ม/แก้รถข้อมูลให้ `mileage - lastPmMileage ≥ 10,000` หรือ `taxExpiry ≤ 7 วัน` → บันทึกขากลับ หรือรีเฟรชหน้า (Fleet scan ตอนเปิด) → ตรวจอีเมลเข้า
+- [ ] **④ Priority 2 (ยังค้าง):** ~~Import ข้ามเครื่องสำหรับ employees / inspections / departures ให้ครบ~~ → **v0.7.19 ทำแล้ว:** import พนักงาน + ประวัติซ่อมครบ (ใน `importFromGoogleSheet`) ยังเหลือแสดงผลซ่อม/พนักงานจากชีตใน UI เพิ่มเติมได้
+- [ ] **⑤ (ถ้ามีเวลานาน) PM_DUE UI:** ปุ่มรีเซ็ตรอบ PM (`lastPmMileage = mileage`), badge "ต้องเข้าเช็ค", NaN guard
+
+### 8.5 วิธี Deploy/อัปเดตเวอร์ชัน → GitHub Pages (ขั้นตอนบังคับเมื่อแก้โค้ด)
+1. Bump version: แทนที่ `v0.7.18` → `v0.7.19` ในไฟล์: `js/googleSheetService.js`, `js/db.js`, `js/app.js`, `js/reportGenerator.js`, `js/server.js`, `css/main.css`, `index.html`, `เปิดใช้งานระบบ.bat`, `เปิดใช้โหมด LAN.bat` (เฉพาะไฟล์ที่เจอคำว่า v0.7.18)
+2. ตรวจ syntax: `node --check js/*.js` (ผ่านหมด = OK)
+3. ถ้าแก้ template GAS ใน googleSheetService.js → รัน `node extract_apps_script.js` เพื่อสร้าง `APPS_SCRIPT_code_ready_to_paste.js` ใหม่
+4. `git add -A` → commit (ตั้ง user.name/user.email = BooK-PON) → `git push origin master` (branch = master!)
+5. รอ GitHub Pages build ~60-90 วิ แล้วเช็ค `https://book-pon.github.io/pea-smart-vehicle/js/app.js?v=v0.7.19`
+6. เตือนผู้ใช้ **Ctrl+F5**
+
+### 8.6 เครื่องมือ/ไฟล์สำคัญ
+- `js/googleSheetService.js` — template GAS (`PEA_GOOGLE_APPS_SCRIPT_CODE`) + readSnapshot/readSnapshotWithRetry + SEND_EMAIL + DEFAULT_WEBAPP_URL
+- `js/db.js` — queue/sync + `getAlertRecipients()` + role email keys
+- `js/app.js` — `checkFleetAlerts()`, `checkMaintenanceAlerts()`, `_buildVehicleAlerts()`, `_sendAlertEmail()`, `_composeAlertEmail()`, `sendTestAlertEmail()`, `openGoogleSheetModal()` (หัวข้อ 4)
+- `APPS_SCRIPT_code_ready_to_paste.js` — **ไฟล์ GAS ฉบับวางจริง 387 บรรทัด (v0.7.17)**
+- `test_gsheet.mjs` — `node test_gsheet.mjs "URL"` (เทสต์ 4 ขั้นจาก Node ต่อ URL จริง, ใช้ได้ทั้งอ่าน/ส่ง/อีเมล)
+- `extract_apps_script.js` — สกัด template → เขียนไฟล์วางใหม่
+- `.gitignore` — ยกเว้น backup (`js/*_backup_working_*.js`), server.js, *.bat, test/script ฯลฯ ไม่ขึ้น Pages
+- Backup เก่า: `js/db_backup_working_v0.7.8.js`, `js/googleSheetService_backup_working_v0.7.8.js`
+
+### 8.7 ส่วนที่ห้ามยุ่ง (ไม่ควรแก้เด็ดขาด)
+- โค้ดหลักอ่าน/เขียน GSheet: `VEHICLE`, `READ_ALL`, `INSPECTION`, `DEPARTURE`, `REPAIR_APPROVAL`, lock, sync queue — แก้ได้เฉพาะ block `SEND_EMAIL`
+- Logic เงื่อนไข PM/tax เดิม + aliasการกันสแปม (`_buildVehicleAlerts`)
+- ห้ามลบ key เดิม `pea_alert_emails` (fallback ยังใช้อยู่)
+- อย่าเปลี่ยนชื่อ tab ชีตด้วยมือใน Sheet (ให้ `migrateDepartureTab()` จัดการอัตโนมัติ)
+- เปลี่ยน GAS URL ต้องทำผ่านการ bump version + push (ไม่ได้สอนให้แก้ใน settings อันเดียว)
+
+### 8.8 อัปเดต v0.7.19 — ทำให้ตาราง Google Sheet ตรงกับข้อมูลจริง (2026-09-21)
+- **สิ่งที่แก้ในโค้ดแล้ว (ในเครื่อง):**
+  - `js/googleSheetService.js`: GAS template ได้แอคชัน `EMPLOYEE`, อ่าน `Repairs` ใน READ_ALL + `REPAIR_FIELD_MAP`, `standardizeHeaderNames()` (รวมหัวข้อ `งานที่ต้องปฏิบัติ (ภารกิจ)`), `employeeId` เป็น String; ฝั่ง client ได้ `normalizeEmployeeRow()` + `mergeEmployeesFromSnapshot()`
+  - `js/db.js`: map `UPDATE_EMPLOYEE→EMPLOYEE`, `DELETE_EMPLOYEE→null`, เพิ่ม `replaceEmployeesFromRemote()`
+  - `js/app.js`: `importFromGoogleSheet()` นำเข้าพนักงาน/ซ่อม + กรอง `TEST-*` + อัปโหลดรถ/พนักงานที่ชีตยังไม่มีให้ครบ
+  - `js/reportGenerator.js`: **กู้ภาษาไทยทั้งไฟล์** (mojibake double-encoding → Windows-874 inverse → UTF-8 ถูกต้อง) ใบรับรอง A4/PDF อ่านภาษาไทยได้
+  - Bump cache-busting `?v=0.7.9` (เก่า!) → `?v=0.7.19` ใน index.html + ทุกไฟล์รวมเวอร์ชัน v0.7.19
+- **งานที่ต้องทำโดยผู้ใช้ (บังคับ):**
+  1. **Re-deploy GAS:** Google Sheet → Apps Script → วาง `APPS_SCRIPT_code_ready_to_paste.js` (449 บรรทัด) ทั้งหมด → Deploy (แก้ deployment เดิม, Version ใหม่, Anyone) → URL เดิมใช้ได้ไม่ต้องแก้
+  3. **Push GitHub Pages:** `git push origin master` แล้วรอ build ~60-90 วิ + เตือนผู้ใช้ **Ctrl+F5**
+  4. กดปุ่ม **Google Sheet** (หัวข้อ 4) → ตั้งค่าอีเมล → "โหลดข้อมูลจาก Google Sheet" เพื่อดาวน์ถลง real fleet + อัปโหลดกองยาน/พนักงานขึ้นชีต
+  5. ตรวจชีต: `ข้อมูลยานพาหนะ_Vehicles` จะมีรถจริง (ไม่ใช่แค่ TEST), `พนักงาน_Employees` มีรายชื่อ, `ประวัติการซ่อม_Repairs` มีประวัติ + หัวข้อคอลัมน์ตรงกัน
+- **ข้อควรรู้:** แถว `TEST-*` เดิมที่อยู่ในชีตจะไม่ถูกนำเข้าลงเครื่องอีกแล้ว (กรองฝั่ง client) แต่ยังค้างอยู่ในชีต หากอยากล้างจริง ต้องลบแถวด้วยมือในชีต (ไม่มีปุ่มลบในตัวระบบฝั่ง GAS)
+
+*บันทึกโดย opencode สำหรับโครงการ PEA Smart Vehicle — 2026-09-21*

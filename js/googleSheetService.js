@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.17
+ * Build Version: v0.7.19
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -22,11 +22,12 @@ function doPost(e) {
 var ss = SpreadsheetApp.getActiveSpreadsheet();
     nameSpreadsheetIfNeeded(ss);
     migrateDepartureTab(ss);
+    standardizeHeaderNames(ss);
     
     if (action === "INSPECTION") {
-      var sheet = getOrCreateSheet(ss, "ตรวจสภาพ_Inspections", [
+var sheet = getOrCreateSheet(ss, "ตรวจสภาพ_Inspections", [
         "วัน-เวลาบันทึก", "เลขที่เอกสาร", "รหัสยานพาหนะ", "หมายเลขทะเบียน", "ยี่ห้อและรุ่น", 
-        "รหัสพนักงาน", "ผู้ปฏิบัติงาน", "งานที่ต้องปฏิบัติ", 
+        "รหัสพนักงาน", "ผู้ปฏิบัติงาน", "งานที่ต้องปฏิบัติ (ภารกิจ)", 
         "ไมล์ก่อนปฏิบัติงาน", "ไมล์หลังปฏิบัติงาน", "ผลต่างระยะทาง (กม.)", "แจ้งเตือนไมล์ผิดปกติ", 
         "เติมเชื้อเพลิง (ลิตร)", "ผลการตรวจ", "รายการจุดชำรุดที่พบ"
       ]);
@@ -46,7 +47,7 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
         payload.vehicleId || "",
         payload.plate || "",
         payload.model || "",
-        payload.employeeId || "-",
+        String(payload.employeeId || "-"),
         payload.driver || payload.inspector || "",
         payload.taskDescription || "ปฏิบัติงานทั่วไป",
         payload.startMileage || payload.mileage || 0,
@@ -99,7 +100,7 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
         payload.vehicleId || "",
         payload.plate || "",
         payload.model || "",
-        payload.employeeId || "-",
+        String(payload.employeeId || "-"),
         payload.operatorName || payload.driver || "",
         payload.taskDescription || "ปฏิบัติงานทั่วไป",
         payload.startMileage || 0,
@@ -168,6 +169,32 @@ var hasJsonCol = ensureJsonColumn(ss, "ข้อมูลยานพาหน�
         payload.approver || "หัวหน้าแผนกยานพาหนะ",
         "อนุมัติแล้ว (RESOLVED)"
       ]);
+} else if (action === "EMPLOYEE") {
+      var empSheet = getOrCreateSheet(ss, "พนักงาน_Employees", [
+        "รหัสพนักงาน", "ชื่อ-นามสกุล", "ตำแหน่ง", "สังกัด/แผนก", "ข้อมูลเต็ม (JSON)"
+      ]);
+      var empJson = JSON.stringify(payload);
+      var empRow = [
+        String(payload.id || ""),
+        payload.name || "",
+        payload.position || "",
+        payload.dept || ""
+      ];
+      var empData = empSheet.getDataRange().getValues();
+      var empRowIndex = -1;
+      for (var i = 1; i < empData.length; i++) {
+        if (String(empData[i][0]).trim() === String(empRow[0]).trim()) {
+          empRowIndex = i + 1;
+          break;
+        }
+      }
+      if (empRowIndex > 0) {
+        empSheet.getRange(empRowIndex, 1, 1, empRow.length).setValues([empRow]);
+        try { empSheet.getRange(empRowIndex, 5).setValue(empJson); } catch (e) {}
+      } else {
+        empSheet.appendRow(empRow);
+        try { empSheet.getRange(empSheet.getLastRow(), 5).setValue(empJson); } catch (e) {}
+      }
     }
     
 else if (action === "SEND_EMAIL") {
@@ -209,6 +236,7 @@ function doGet(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     nameSpreadsheetIfNeeded(ss);
     migrateDepartureTab(ss);
+    standardizeHeaderNames(ss);
     var out = {
       ok: true,
       action: action,
@@ -217,7 +245,8 @@ function doGet(e) {
         vehicles: readSheetRows(ss, "ข้อมูลยานพาหนะ_Vehicles", VEHICLE_FIELD_MAP),
         employees: readSheetRows(ss, "พนักงาน_Employees", EMPLOYEE_FIELD_MAP),
         inspections: readSheetRows(ss, "ตรวจสภาพ_Inspections", INSPECTION_FIELD_MAP),
-        departures: readSheetRows(ss, "บันทึกการเข้า-ออกรถยนต์_Departures", DEPARTURE_FIELD_MAP)
+        departures: readSheetRows(ss, "บันทึกการเข้า-ออกรถยนต์_Departures", DEPARTURE_FIELD_MAP),
+        repairs: readSheetRows(ss, "ประวัติการซ่อม_Repairs", REPAIR_FIELD_MAP)
       }
     };
 
@@ -266,6 +295,7 @@ var INSPECTION_FIELD_MAP = {
   "รหัสพนักงาน": "employeeId",
   "ผู้ปฏิบัติงาน": "driver",
   "งานที่ต้องปฏิบัติ": "taskDescription",
+  "งานที่ต้องปฏิบัติ (ภารกิจ)": "taskDescription",
   "ไมล์ก่อนปฏิบัติงาน": "startMileage",
   "ไมล์หลังปฏิบัติงาน": "endMileage",
   "ผลต่างระยะทาง (กม.)": "mileageDelta",
@@ -283,10 +313,23 @@ var DEPARTURE_FIELD_MAP = {
   "ยี่ห้อและรุ่น": "model",
   "รหัสพนักงาน": "employeeId",
   "ผู้ปฏิบัติงาน": "operatorName",
+  "งานที่ต้องปฏิบัติ": "taskDescription",
   "งานที่ต้องปฏิบัติ (ภารกิจ)": "taskDescription",
   "เลขไมล์ขาไปปฏิบัติงาน": "startMileage",
   "เลขไมล์ขากลับปฏิบัติงาน": "endMileage",
   "สถานะ": "status",
+  "ข้อมูลเต็ม (JSON)": "jsonFull"
+};
+var REPAIR_FIELD_MAP = {
+  "วัน-เวลาอนุมัติ": "timestamp",
+  "เลขที่ใบแจ้งซ่อม": "ticketId",
+  "รหัสยานพาหนะ": "vehicleId",
+  "หมายเลขทะเบียน": "plate",
+  "ผู้แจ้งซ่อม": "reporter",
+  "รายการที่ซ่อมแซม": "items",
+  "ช่างผู้ดำเนินการ": "mechanic",
+  "ผู้อนุมัติงานซ่อม": "approver",
+  "สถานะสุดท้าย": "status",
   "ข้อมูลเต็ม (JSON)": "jsonFull"
 };
 
@@ -355,6 +398,25 @@ function migrateDepartureTab(ss) {
   } catch (e) {
     // ไม่มีสิทธิ์เปลี่ยนชื่อ ให้ข้ามไป ระบบยังทำงานกับชื่อใหม่ตามปกติ
   }
+}
+
+// ปรับหัวข้อคอลัมน์ให้ตรงกันทุกแท็บ (งานที่ต้องปฏิบัติ == งานที่ต้องปฏิบัติ (ภารกิจ))
+function standardizeHeaderNames(ss) {
+  renameHeader(ss, "ตรวจสภาพ_Inspections", "งานที่ต้องปฏิบัติ", "งานที่ต้องปฏิบัติ (ภารกิจ)");
+}
+
+function renameHeader(ss, sheetName, from, to) {
+  try {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      if (String(headers[i]).trim() === from) {
+        sheet.getRange(1, i + 1).setValue(to);
+        return;
+      }
+    }
+  } catch (e) { /* ไม่มีสิทธิ์แก้ออกจากชีตเฉพาะ ให้ข้ามไป */ }
 }
 
 function getOrCreateSheet(ss, sheetName, headers) {
@@ -566,7 +628,7 @@ class PEAGoogleSheetService {
         if (!snapshot.success) {
             return {
                 success: false,
-                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.17 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
+                message: 'ส่งข้อมูลสำเร็จ แต่ไม่สามารถอ่านกลับมาได้ (GAS ตอบ: ' + (snapshot.message || 'timeout') + ') — ตรวจว่าได้ Deploy โค้ด v0.7.19 ล่าสุดหรือยัง (ต้องมี doGet READ_ALL และ Deploy ใหม่)',
                 sent: true,
                 detail: snapshot
             };
@@ -704,7 +766,7 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     return {
                         success: false,
                         reason: 'OLD_SCRIPT',
-                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.17 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
+                        message: 'สคริปต์บน Google Apps Script ยังเป็นเวอร์ชันเก่า (ตอบสถานะ online แต่ยังไม่มี doGet READ_ALL) — กรุณาเปิด Apps Script วางโค้ดใหม่ v0.7.19 ทั้งไฟล์ แล้ว Deploy ใหม่อีกครั้ง (ต้องเลือกเว็บแอป Everyone/Anyone)'
                     };
                 }
                 return { success: false, reason: 'BAD_RESPONSE', payload, message: 'GAS ตอบกลับรูปแบบที่ไม่รู้จัก' };
@@ -843,6 +905,54 @@ const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             if (v && v.id && !seen[String(v.id)]) {
                 merged.push(v);
                 seen[String(v.id)] = true;
+            }
+        });
+
+        return merged;
+    }
+
+    // แปลงแถวพนักงานจากชีต -> object เดียวกับ schema ของ db
+    normalizeEmployeeRow(row) {
+        if (!row) return null;
+        // jsonFull เป็น object ที่ app ส่งไปแล้ว (มีฟิลด์ครบ) => ใช้ตรง ๆ
+        if (row.jsonFull && typeof row.jsonFull === 'object') {
+            return Object.assign({}, row.jsonFull);
+        }
+        return {
+            id: (row.id !== undefined && row.id !== null && row.id !== '') ? String(row.id).trim() : '',
+            name: row.name || '',
+            position: row.position || 'พนักงาน กฟภ.',
+            dept: row.dept || 'การไฟฟ้าส่วนภูมิภาค'
+        };
+    }
+
+    // รวมรายชื่อพนักงานจาก snapshot กับ LocalStorage
+    // remote มีรหัสที่เครื่องยังไม่มี => เพิ่ม; ถ้ามีทั้งสองฝั่ง => คงของเครื่อง (แก้ไขที่นี่เป็นหลัก)
+    mergeEmployeesFromSnapshot(snapshotRows, localEmployees) {
+        const localById = {};
+        (localEmployees || []).forEach(e => { if (e && e.id) localById[String(e.id).trim()] = e; });
+
+        const merged = [];
+        const seen = {};
+
+        (snapshotRows || []).forEach(row => {
+            if (!row || row.id === undefined || row.id === null || row.id === '') return;
+            const id = String(row.id).trim();
+            if (seen[id]) return;
+            seen[id] = true;
+            if (localById[id]) {
+                merged.push(localById[id]);
+            } else {
+                const n = this.normalizeEmployeeRow(row);
+                if (n && n.id) merged.push(n);
+            }
+        });
+
+        // พนักงานที่อยู่ในเครื่องแต่ยังไม่มีในชีต => คงไว้
+        (localEmployees || []).forEach(e => {
+            if (e && e.id && !seen[String(e.id).trim()]) {
+                merged.push(e);
+                seen[String(e.id).trim()] = true;
             }
         });
 
