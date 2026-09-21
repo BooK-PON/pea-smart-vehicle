@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.20
+ * Build Version: v0.7.21
  */
 
 class PEASmartVehicleApp {
@@ -349,13 +349,16 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
             `);
         }
 
-        // 2. PM 10,000 km calculation
+// 2. PM 10,000 km calculation
         const distanceSincePm = v.mileage - v.lastPmMileage;
         if (distanceSincePm >= 10000) {
             badges.push(`
                 <div class="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs flex items-center gap-1.5 font-bold animate-pulse">
                     <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
                     <span>ถึงกำหนด PM 10,000 กม. (วิ่งแล้ว ${distanceSincePm.toLocaleString()} กม. - ควรเปลี่ยนถ่ายของเหลว)</span>
+                    <button onclick="app.markPmDone('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ PM แล้ว</button>
+                        <i class="fa-solid fa-check"></i> เคลียร์ PM แล้ว
+                    </button>
                 </div>
             `);
         } else {
@@ -1373,9 +1376,9 @@ try { this.updateNetworkUI(); } catch(e) { console.error('[PEA] Network UI error
                             <div class="text-slate-200">${v.model}</div>
                             <div class="text-[10px] text-slate-400">${v.department}</div>
                         </td>
-                        <td class="py-3 px-3">
+<td class="py-3 px-3">
                             <div class="font-mono text-slate-200 font-bold">${v.mileage.toLocaleString()} กม.</div>
-                            ${isPmDue ? '<span class="text-[10px] text-amber-400 font-bold"><i class="fa-solid fa-wrench"></i> ถึงรอบ PM 10,000 กม.</span>' : `<span class="text-[10px] text-slate-500">อีก ${(10000 - distanceSincePm).toLocaleString()} กม.</span>`}
+                            ${isPmDue ? `<div class="flex items-center gap-2 mt-1"><span class="text-[10px] text-amber-400 font-bold"><i class="fa-solid fa-wrench"></i> ถึงรอบ PM 10,000 กม.</span><button onclick="app.markPmDone('${v.id}')" class="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition"><i class="fa-solid fa-check"></i> เคลียร์ PM</button></div>` : `<span class="text-[10px] text-slate-500">อีก ${(10000 - distanceSincePm).toLocaleString()} กม.</span>`}
                         </td>
                         <td class="py-3 px-3">
                             <div class="text-slate-200">${v.taxExpiry || '-'}</div>
@@ -3535,21 +3538,24 @@ saveAlertEmails() {
     // =========================================================================
     // Email Alerts: Preventive Maintenance & Tax Expiry
     // =========================================================================
+    // คำนวณเงื่อนไขแจ้งเตือนของรถ 1 คัน (แยกหมวด PM / Tax)
+    // lock ใช้กลไก "รอบละครั้ง" (cycle):
+    //   - PM:  key pea_alert_pm_cycle_{id} เก็บค่า lastPmMileage ที่เคยแจ้งแล้ว
+    //          แจ้งใหม่ก็ต่อเมื่อ lastPmMileage เปลี่ยน (คือ "เคลียร์ PM" แล้วเข้า Pมรอบใหม่)
+    //   - Tax: key pea_alert_tax_cycle_{id} เก็บค่า taxExpiry ที่เคยแจ้งแล้ว
+    //          แจ้งใหม่ก็ต่อเมื่อ taxExpiry เปลี่ยน (คือ "ต่อภาษี" แล้ว)
     _buildVehicleAlerts(vehicle) {
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        let alertsHTML = "";
-        let alertsCount = 0;
+        const result = { pm: { html: "", count: 0 }, tax: { html: "", count: 0 } };
 
         // 1. เช็ก PM (ระยะวิ่งตั้งแต่ PM รอบก่อน >= 10,000 กม.)
         const lastPmMileage = vehicle.lastPmMileage || 0;
         const distanceSinceLastPM = vehicle.mileage - lastPmMileage;
 
         if (distanceSinceLastPM >= 10000) {
-            // ผูก lock กับระยะไมล์ล่าสุด + วัน เพื่อให้เตือนซ้ำวันละครั้งถ้ายังไม่เข้าศูนย์เปลี่ยน lastPmMileage
-            const alertKey = `pea_alert_pm_${vehicle.id}_${vehicle.mileage}_${today}`;
-            const lastAlert = localStorage.getItem(alertKey);
-            if (lastAlert !== "sent") {
-                alertsHTML += `
+            const cycleKey = `pea_alert_pm_cycle_${vehicle.id}`;
+            const alertedBaseline = localStorage.getItem(cycleKey);
+            if (alertedBaseline !== String(lastPmMileage)) {
+                result.pm.html += `
                     <div style="margin-bottom:15px; padding:15px; background-color:#fff5f5; border-left:5px solid #dc2626; border-radius:4px;">
                         <h3 style="margin:0 0 10px 0; color:#dc2626;">🚨 [ถึงกำหนด PM] ทะเบียน: ${vehicle.plate}</h3>
                         <p style="margin:0; font-size:14px;"><strong>เลขไมล์ปัจจุบัน:</strong> ${vehicle.mileage.toLocaleString()} กม.</p>
@@ -3557,8 +3563,7 @@ saveAlertEmails() {
                         <p style="margin:5px 0 0 0; font-size:14px; color:#b91c1c;"><em>กรุณานำรถเข้าศูนย์บริการเพื่อบำรุงรักษาตามระยะ</em></p>
                     </div>
                 `;
-                alertsCount++;
-                localStorage.setItem(alertKey, "sent");
+                result.pm.count++;
             }
         }
 
@@ -3574,37 +3579,47 @@ saveAlertEmails() {
             const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
             if (diffDays <= taxThresholdDays) {
-                // ผูก lock แบบรายวัน
-                const alertKey = `pea_alert_tax_${vehicle.id}_${today}`;
-                const lastAlert = localStorage.getItem(alertKey);
-                if (lastAlert !== "sent") {
+                const cycleKey = `pea_alert_tax_cycle_${vehicle.id}`;
+                const alertedExpiry = localStorage.getItem(cycleKey);
+                if (alertedExpiry !== String(vehicle.taxExpiry)) {
                     const statusText = diffDays < 0 ? `🚨 [ภาษีขาดต่อ!] เลยกำหนด: ${Math.abs(diffDays)} วัน` : (diffDays === 0 ? `🚨 [ภาษีหมดอายุวันนี้!]` : `⚠️ [ภาษีใกล้หมดอายุ] เหลืออีก: ${diffDays} วัน`);
                     const color = diffDays <= 0 ? '#dc2626' : '#d97706';
                     const bgColor = diffDays <= 0 ? '#fff5f5' : '#fffbeb';
-                    alertsHTML += `
+                    result.tax.html += `
                         <div style="margin-bottom:15px; padding:15px; background-color:${bgColor}; border-left:5px solid ${color}; border-radius:4px;">
                             <h3 style="margin:0 0 10px 0; color:${color};">${statusText}</h3>
                             <p style="margin:0; font-size:14px;"><strong>ทะเบียน:</strong> ${vehicle.plate}</p>
                             <p style="margin:5px 0 0 0; font-size:14px;"><strong>วันหมดอายุ:</strong> ${vehicle.taxExpiry}</p>
                         </div>
                     `;
-                    alertsCount++;
-                    localStorage.setItem(alertKey, "sent");
+                    result.tax.count++;
                 }
             }
         }
 
-        return { html: alertsHTML, count: alertsCount };
+        return result;
     }
 
-    _composeAlertEmail(vehicleLabel, alertsHTML) {
+    // หลังส่ง PM สำเร็จ → lock รอบปัจจุบัน (จำ baseline lastPmMileage)
+    _markPmCycleAlerted(vehicle) {
+        const key = `pea_alert_pm_cycle_${vehicle.id}`;
+        localStorage.setItem(key, String(vehicle.lastPmMileage || 0));
+    }
+
+    // หลังส่ง Tax สำเร็จ → lock รอบปัจจุบัน (จำค่า taxExpiry)
+    _markTaxCycleAlerted(vehicle) {
+        const key = `pea_alert_tax_cycle_${vehicle.id}`;
+        localStorage.setItem(key, String(vehicle.taxExpiry));
+    }
+
+    _composeAlertEmail(vehicleLabel, alertsHTML, greeting) {
         return `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
                 <div style="background-color: #581c87; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
                     <h2 style="color: #fcd34d; margin: 0;">ระบบจัดการยานพาหนะ กฟภ. (PEA Fleet)</h2>
                 </div>
                 <div style="padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-                    <p style="font-size:16px;">เรียน ช่างเครื่องยนต์และหัวหน้างาน,</p>
+                    <p style="font-size:16px;">เรียน ${greeting || 'ช่างเครื่องยนต์และหัวหน้างาน'},</p>
                     <p style="font-size:14px; margin-bottom: 20px;">มีรายการแจ้งเตือนสำหรับรถยนต์ <strong>${vehicleLabel}</strong> ดังนี้:</p>
                     ${alertsHTML}
                     <p style="font-size:12px; color:#6b7280; margin-top:30px; border-top:1px solid #e5e7eb; padding-top:15px;">
@@ -3615,15 +3630,16 @@ saveAlertEmails() {
         `;
     }
 
-    _sendAlertEmail(subject, body) {
+    _sendAlertEmail(subject, body, recipients, onSuccess) {
         if (typeof googleSheet === 'undefined' || typeof db === 'undefined') return;
-        const recipients = db.getAlertRecipients();
-        if (recipients.length === 0) return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
+        const list = recipients && recipients.length > 0 ? recipients : db.getAlertRecipients();
+        if (list.length === 0) return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
 
-        googleSheet.sendEmailAlert(recipients, subject, body).then(res => {
+        googleSheet.sendEmailAlert(list, subject, body).then(res => {
             if (res && res.success) {
-                console.log(`[Email Alert] Sent to ${recipients.join(', ')}`);
-                notifier.showToast('แจ้งเตือนอัตโนมัติสำเร็จ', `ส่งอีเมลไปยังช่างเครื่องยนต์และหัวหน้างานแล้ว (${recipients.length} คน)`, 'SUCCESS');
+                console.log(`[Email Alert] Sent to ${list.join(', ')}`);
+                notifier.showToast('แจ้งเตือนอัตโนมัติสำเร็จ', `ส่งอีเมลไปยัง ${list.length} คนแล้ว (${subject})`, 'SUCCESS');
+                if (typeof onSuccess === 'function') onSuccess();
             } else {
                 console.warn('[Email Alert] Failed to send', res);
                 notifier.showToast('การส่งอีเมลล้มเหลว', 'อาจเกิดจากสิทธิ์การเข้าถึง Google Apps Script โปรดตรวจสอบการ Deploy', 'WARNING');
@@ -3635,36 +3651,87 @@ saveAlertEmails() {
     }
 
     // เช็กครั้งเดียวสำหรับรถคันที่เพิ่ง "บันทึกขากลับ"
+    // แยกส่ง: PM → หัวหน้า + ช่างเครื่อง / ภาษี → หัวหน้าคนเดียว
     checkMaintenanceAlerts(vehicle) {
         if (!vehicle || typeof db === 'undefined' || typeof googleSheet === 'undefined') return;
         const res = this._buildVehicleAlerts(vehicle);
-        if (res.count > 0) {
-            const subject = `[PEA Fleet Alert] แจ้งเตือนรถยนต์ทะเบียน ${vehicle.plate}`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.html));
+        if (res.pm.count > 0) {
+            const subject = `[PEA Fleet Alert] ถึงกำหนด PM 10,000 กม. ทะเบียน ${vehicle.plate}`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.pm.html, 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), () => this._markPmCycleAlerted(vehicle));
+        }
+        if (res.tax.count > 0) {
+            const subject = `[PEA Fleet Alert] ภาษีจะหมดอายุ ≤ 7 วัน ทะเบียน ${vehicle.plate}`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(`${vehicle.plate} (${vehicle.model})`, res.tax.html, 'หัวหน้างาน'), db.getTaxRecipients(), () => this._markTaxCycleAlerted(vehicle));
         }
     }
 
-    // สแกนทั้งกองยาน (เรียกตอนเปิดโปรแกรม) ส่งเป็นสรุปเดียวถ้ามีคันใดถึงกำหนด
+    // สแกนทั้งกองยาน (เรียกตอนเปิดโปรแกรม) ส่งแยก 2 ฉบับ: PM / ภาษี
     checkFleetAlerts() {
         if (typeof db === 'undefined' || typeof googleSheet === 'undefined') return;
         const vehicles = db.getVehicles();
-        let combinedHTML = "";
-        let totalCount = 0;
-        const flaggedCars = [];
+        const pmHTML = [], taxHTML = [];
+        const pmCars = [], taxCars = [];
 
         vehicles.forEach(v => {
             const res = this._buildVehicleAlerts(v);
-            if (res.count > 0) {
-                combinedHTML += res.html;
-                totalCount += res.count;
-                flaggedCars.push(`${v.plate}${v.model ? ' (' + v.model + ')' : ''}`);
+            if (res.pm.count > 0) {
+                pmHTML.push(res.pm.html);
+                pmCars.push(`${v.plate}${v.model ? ' (' + v.model + ')' : ''}`);
+            }
+            if (res.tax.count > 0) {
+                taxHTML.push(res.tax.html);
+                taxCars.push(`${v.plate}${v.model ? ' (' + v.model + ')' : ''}`);
             }
         });
 
-        if (totalCount > 0) {
-            const subject = `[PEA Fleet Alert] พบ ${flaggedCars.length} คัน ถึงกำหนด PM/ภาษี ภายใน 7 วัน`;
-            this._sendAlertEmail(subject, this._composeAlertEmail(flaggedCars.join(', '), combinedHTML));
+        if (pmCars.length > 0) {
+            const subject = `[PEA Fleet Alert] พบ ${pmCars.length} คัน ถึงกำหนด PM 10,000 กม.`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(pmCars.join(', '), pmHTML.join(''), 'ช่างเครื่องยนต์และหัวหน้างาน'), db.getPmRecipients(), () => {
+                vehicles.forEach(v => {
+                    const r = this._buildVehicleAlerts(v);
+                    if (r.pm.count > 0) this._markPmCycleAlerted(v);
+                });
+            });
         }
+
+        if (taxCars.length > 0) {
+            const subject = `[PEA Fleet Alert] พบ ${taxCars.length} คัน ภาษีจะหมดอายุ ≤ 7 วัน หรือขาดต่อ`;
+            this._sendAlertEmail(subject, this._composeAlertEmail(taxCars.join(', '), taxHTML.join(''), 'หัวหน้างาน'), db.getTaxRecipients(), () => {
+                vehicles.forEach(v => {
+                    const r = this._buildVehicleAlerts(v);
+                    if (r.tax.count > 0) this._markTaxCycleAlerted(v);
+                });
+            });
+        }
+    }
+
+    // ปุ่ม "เคลียร์ PM" — บันทึกว่าได้นำรถเข้าบำรุงรักษาตามรอบแล้ว
+    // ตั้ง lastPmMileage = เลขไมล์ปัจจุบัน → ระบบรู้ว่าผ่านรอบนี้แล้ว จะแจ้งอีกครั้งเมื่อวิ่งครบอีก 10,000 กม.
+    markPmDone(vehicleId) {
+        const vehicle = db.getVehicleById(vehicleId);
+        if (!vehicle) return;
+
+        if (!confirm(`ยืนยันว่าได้นำรถทะเบียน ${vehicle.plate} เข้าบำรุงรักษาตามรอบ PM เรียบร้อยแล้ว?\n\nระบบจะตั้งหลักเลขไมล์รอบใหม่ = ${vehicle.mileage.toLocaleString()} กม. และจะแจ้งเตือนอีกครั้งเมื่อวิ่งครบอีก 10,000 กม.`)) return;
+
+        vehicle.lastPmMileage = vehicle.mileage;
+        vehicle.updatedAt = new Date().toISOString();
+        db.saveVehicle(vehicle);
+        localStorage.removeItem(`pea_alert_pm_cycle_${vehicle.id}`);
+
+        db.addConsolidatedActivityLog({
+            actionType: 'PM_CLEARED',
+            vehicleId: vehicle.id,
+            plate: vehicle.plate,
+            operator: this.currentInspector || 'หัวหน้าแผนกยานพาหนะ (Supervisor)',
+            role: 'CHIEF',
+            summary: `เคลียร์รอบ PM: นำเข้าบำรุงรักษาแล้ว ตั้งหลักไมล์รอบใหม่ = ${vehicle.mileage.toLocaleString()} กม.`,
+            statusResult: 'READY'
+        });
+
+        notifier.showToast('บันทึกการเคลียร์ PM สำเร็จ', `ทะเบียน ${vehicle.plate}: รอบ PM ถัดไปอีก 10,000 กม.`, 'SUCCESS');
+        this.updateVehicleHeaderCard();
+        this.renderSupervisorDashboard();
+        this.renderPmAndTaxBadges(db.getVehicleById(vehicle.id));
     }
 }
 

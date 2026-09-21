@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.20 (Cache Busting)
+ * Build Version: v0.7.21 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.20';
+const APP_BUILD_VERSION = 'v0.7.21';
 
 class PEADatabase {
     constructor() {
@@ -186,6 +186,37 @@ class PEADatabase {
             }
         }
         return [...new Set(emails.map(e => e.toLowerCase()))];
+    }
+
+    // รับอีเมลแยกตามบทบาทผู้รับ:
+    //   PM  (ครบ 10,000 กม.)  =>  ['CHIEF','MECHANIC']  (หัวหน้า + ช่างเครื่อง)
+    //   Tax (ภาษี ≤ 7 วัน)     =>  ['CHIEF']              (หัวหน้าคนเดียว)
+    // กรณีที่ยังไม่เคยตั้งอีเมลแยกบทบาท (ใช้ key เดิม pea_alert_emails) จะส่งให้ครบทุกคนที่ตั้งไว้
+    getAlertRecipientsForRoles(roles) {
+        const roleSet = (Array.isArray(roles) ? roles : [roles]);
+        const emails = [];
+        const mechanic = this.getMechanicEmail();
+        const chief = this.getChiefEmail();
+        if (roleSet.indexOf('MECHANIC') >= 0 && mechanic) emails.push(mechanic);
+        if (roleSet.indexOf('CHIEF') >= 0 && chief) emails.push(chief);
+        if (emails.length === 0) {
+            const legacy = this.getAlertEmails();
+            if (legacy) {
+                legacy.split(',').forEach(e => {
+                    const trimmed = e.trim();
+                    if (trimmed) emails.push(trimmed);
+                });
+            }
+        }
+        return [...new Set(emails.map(e => e.toLowerCase()))];
+    }
+
+    getPmRecipients() {
+        return this.getAlertRecipientsForRoles(['CHIEF', 'MECHANIC']);
+    }
+
+    getTaxRecipients() {
+        return this.getAlertRecipientsForRoles(['CHIEF']);
     }
 
     getVehicles() {

@@ -1,7 +1,7 @@
 ﻿# Agent Handover Log & Task State: PEA Smart Vehicle
 **ระบบตรวจสภาพและบริหารยานพาหนะอัจฉริยะ การไฟฟ้าส่วนภูมิภาค (PEA)**  
 **บันทึกล่าสุดเมื่อ:** 2026-09-21 (สำหรับใช้ปฏิบัติงานต่อในวันพรุ่งนี้)  
-**เวอร์ชันปัจจุบันของระบบ:** v0.7.20  
+**เวอร์ชันปัจจุบันของระบบ:** v0.7.21  
 **พาธโปรเจกต์:** D:\PEA SMART
 **เว็บ Online (GitHub Pages):** https://book-pon.github.io/pea-smart-vehicle/
 
@@ -271,16 +271,16 @@
 - [ ] **ผู้ใช้ต้องทำการ deploy เอง:** เปิด Google Sheet → Extensions > Apps Script → วางโค้ด `PEA_GOOGLE_APPS_SCRIPT_CODE` ใหม่ทั้งหมด → Deploy ใหม่เป็น Web app (Anyone) → วาง URL ลง modal → กด "ทดสอบส่งข้อมูลทดสอบ" + "โหลดข้อมูลจาก Google Sheet (ซิงก์ลงเครื่อง)"
 
 ### 7.6 สเต็ปถัดไป (Pending — PM 10,000 กม.)
-- [ ] **ปุ่ม "บันทึกการเข้าเช็ค/รีเซ็ตรอบ PM"** — set `lastPmMileage = mileage` ปัจจุบัน
-- [ ] **สถานะ PM_DUE** ให้แสดง "ต้องเข้ารับการตรวจเช็คสภาพรถ" ตอน badge/board/คิว (ตอนนี้ `pmDueCount` คำนวณแล้ว แต่ status ยังเป็น READY)
+- [x] ~~**ปุ่ม "บันทึกการเข้าเช็ค/รีเซ็ตรอบ PM"** — set `lastPmMileage = mileage` ปัจจุบัน~~ → **เสร็จ (v0.7.21):** ปุ่ม "เคลียร์ PM แล้ว" ใน badge + ตารางสรุป → `markPmDone()` จัดการให้
+- [ ] **สถานะ PM_DUE** ให้แสดง "ต้องเข้ารับการตรวจเช็คสภาพรถ" ตอน badge/board/คิว (ตอนนี้แจ้งเตือนขึ้นแล้วใน badge/สรุป แต่ status รายการยังเป็น READY ได้)
 - [ ] **NaN guard** "อีก NaN กม." หาก `lastPmMileage` undefined
-- [ ] **ตรวจภาษี + PM เรียกผ่านหลายจุด** (ตอนนี้ alert ถูกเรียกเฉพาะตอนบันทึกขากลับ) และ email ตั้งค่าแล้วจึงจะส่ง
+- [x] ~~**ตรวจภาษี + PM เรียกผ่านหลายจุด**~~ → **เสร็จ (v0.7.21):** fleet scan ตอนเปิดแอป + ทุกบันทึกขากล้าง; email แยก 2 ฉบับ ตามบทบาทผู้รับ; lock รอบละครั้ง
 
 ---
 
 ## 8. แผนกงานล่าสุด — Deploy สู่เว็บสาธารณะ + Email Alert 2 บทบาท (2026-09-21) ★สถานะล่าสุด
 
-### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.20)
+### 8.1 สถานภาพปัจจุบัน (ปัจจุบัน = v0.7.21)
 - **เว็บเปิดได้ผ่านอินเทอร์เน็ต (ทุกคนใช้งานได้):** `https://book-pon.github.io/pea-smart-vehicle/`
   - Repo: **public** `BooK-PON/pea-smart-vehicle` — branch คือ **`master`** (ไม่ใช่ main!) → push ทุกครั้งผ่าน `git push origin master`
   - GitHub CLI (`gh`) ล็อกอินเป็น **BooK-PON** แล้ว พร้อมใช้
@@ -311,6 +311,13 @@
   - **อัปโหลดรถ/พนักงานที่เครื่องมีแต่ชีตยังไม่มีขึ้นไป** ในการ import — ทำให้ชีตมีกองยานจริง ไม่ใช่แค่แถวทดสอบ
   - **ซ่อม encoding reportGenerator.js** — ภาษาไทยทั้งไฟล์เป็น mojibake (double-encoding จากตอนกู้ zip) ใบรับรอง A4/PDF จึงแสดงภาษาไทยถูกต้อง 100% |
 | v0.7.20 | **แก้บั๊กส่งอีเมลจริง:** `MailApp.sendEmail({to: [...]})` array ของ GAS → ต้อง `join(', ')` เป็น string (พบตอนเทสต์ live URL: "อีเมลไม่ถูกต้อง [Ljava.lang.Object;...") — v0.7.17-19 ที่ผ่านมาไม่เคยส่งสำเร็จจริงสักฉบับ; ข้อมูลจริงมี 3 คันเข้าเงื่อนไข (กพ-4501/2ขข-1102 PM-DUE + 82-8820 ภาษีขาด 24 วัน) |
+| v0.7.21 | **ส่งอีเมลแยกตามเงื่อนไข + แจ้งรอบละครั้ง:**
+  - **แยกผู้รับ:** PM 10,000 กม. → **หัวหน้า + ช่างเครื่อง** / ภาษี ≤ 7 วัน → **หัวหน้าคนเดียว** (`db.getPmRecipients()`/`getTaxRecipients()` = `getAlertRecipientsForRoles()`, fallback key เดิม `pea_alert_emails` ยังใช้ได้)
+  - **lock เปลี่ยนเป็น "รอบละครั้ง" (cycle):** PM lock จำค่า `lastPmMileage`, Tax lock จำค่า `taxExpiry` — ระบบรู้ว่า "เคลียร์แล้ว" เพราะค่า baseline ของข้อมูลเปลี่ยน (ไม่ได้ lock ตามวันแบบ v0.7.17 ที่สแปมทุกวัน)
+  - **ปุ่ม `เคลียร์ PM แล้ว`** ใน header badge + แถว fleet table ของตารางสรุป → `markPmDone()` ตั้ง `lastPmMileage = mileage` ปัจจุบัน + log + ซิงก์ขึ้นชีต (ผ่านคอลัมน์ JSON ทำให้ baseline ข้ามเครื่องได้)
+  - **ต่อภาษี:** ใช้ฟอร์มแก้รถ (ตั้ง `taxExpiry` ใหม่) — ค่าเปลี่ยน = รู้ว่าต่อแล้ว รอบถัดไป (ใกล้ 7 วัน) จะแจ้งอีก
+  - Fleet scan ตอนเปิดแอป ส่งแยก 2 ฉบับ (ฉบับ PM + ฉบับภาษี) แทนฉบับรวม |
+| v0.7.22 วางแผน | ตัวเลือกถัดไป: ส่งสรุปรายวัน/สัปดาห์, ปรับแต่ง HTML อีเมล, แจ้งเตือนจุดชำรุดวิกฤตถึงช่าง |
 
 ### 8.3 ระบบ Email Alert (หัวใจ v0.7.17) — ข้อกำหนดจากผู้ใช้
 - **Trigger 2 เงื่อนไข (ใน `checkMaintenanceAlerts` / `_buildVehicleAlerts` ของ `js/app.js`):**
@@ -320,41 +327,47 @@
   - เก็บใน localStorage แยกช่อง: `pea_alert_email_mechanic`, `pea_alert_email_chief`
   - Getter รวม: `db.getAlertRecipients()` (ถ้าทั้งสองช่องว่าง → fallback ไป key เดิม `pea_alert_emails` แบบ , )
   - **ตอนทดสอบ:** ผู้ใช้มีเฉพาะ `pon60562@gmail.com` → กรอกช่องทั้งสอง = pon60562@gmail.com
-- **เวลาเช็ค:** (1) **Fleet scan ทั้งกองยานตอนเปิดแอป** (`checkFleetAlerts()` ใน init — ส่ง 1 อีเมลสรุปถ้ามีคันถึงกำหนด) + (2) ทุกครั้ง "บันทึกขากลับ" สำหรับรถคันนั้น (`checkMaintenanceAlerts(vehicle)`)
-- **กันสแปม:** lock ใน localStorage — PM: `pea_alert_pm_{id}_{mileage}_{วัน}` / Tax: `pea_alert_tax_{id}_{วัน}` → **ส่งซ้ำวันละครั้ง** ตราบใดที่ยังไม่แก้เงื่อนไข (ตามที่ตกลงกับผู้ใช้)
-- **GAS:** แอคชัน `SEND_EMAIL` → `MailApp.sendEmail({ to: toList(Array) })` — รองรับ array แล้ว
+- **เวลาเช็ค:** (1) **Fleet scan ทั้งกองยานตอนเปิดแอป** (`checkFleetAlerts()` ใน init — ส่ง 2 ฉบับแยก: สรุป PM + สรุปภาษี ถ้ามีคันถึงกำหนด) + (2) ทุกครั้ง "บันทึกขากลับ" สำหรับรถคันนั้น (`checkMaintenanceAlerts(vehicle)` → ส่งรายคัน)
+- **กันสแปม (รอบละครั้ง — v0.7.21):** lock ใน localStorage ใช้ค่า baseline เป็นตัวบอกว่า "ยังไม่เคลียร์":
+  - **PM:** `pea_alert_pm_cycle_{id}` จำค่า `lastPmMileage` → แจ้งซ้ำเพราะค่าเดิม = ส่งซ้ำไม่ได้จนกว่า `markPmDone()` (ปุ่ม "เคลียร์ PM แล้ว") หรือแก้รถให้ `lastPmMileage` เปลี่ยน
+  - **Tax:** `pea_alert_tax_cycle_{id}` จำค่า `taxExpiry` → แจ้งซ้ำเพราะค่าวันเดิม = ส่งซ้ำไม่ได้จนกว่าจะต่อภาษี (แก้ฟอร์มรถ ตั้ง `taxExpiry` ใหม่)
+  - ทั้งสอง key ถูกเช็ค/เขียนแบบ "record-before-send" (กัน race เมื่อรีเฟรชหลาย tab พร้อมกัน) ใน `_markPmCycleAlerted()`/`_markTaxCycleAlerted()`
+  - ข้อมูล baseline ผ่าน GAS 2 ทาง (JSON column คอลัมน์เดียว) → **ล็อกไม่ผูกกับเครื่องใดเครื่องหนึ่ง**
+- **แยกผู้รับ (v0.7.21):** PM → หัวหน้า + ช่างเครื่อง / ภาษี → หัวหน้าคนเดียว (ดู `db.getPmRecipients()`/`getTaxRecipients()`)
+- **GAS:** แอคชัน `SEND_EMAIL` → `MailApp.sendEmail({ to: toList.join(', ') })` — ⚠️ **GAS รับ `to` เป็น string คั่น `,` เท่านั้น ไม่ใช่ array** (เทสต์จริงเจอ error "อีเมลไม่ถูกต้อง [Ljava.lang.Object;..." ตอน v0.7.17-19 — ยังไม่เคยส่งสำเร็จจริงจนถึง v0.7.20)
 - **กล่องข้อความหลัก Gmail:** ส่งผ่าน GAAS จากบัญชีผู้ใช้เอง + เนื้อหา HTML เรียบง่าย → ควรเข้า Primary inbox (ยังต้องยืนยันจริงในการทดสอบ)
 - **UI:** ตั้งค่า Google Sheets modal → หัวข้อ **"4. อีเมลสำหรับรับแจ้งเตือน"** → 2 ช่อง (หัวหน้างาน / ช่างเครื่องยนต์) + ปุ่ม **บันทึกอีเมล** + ปุ่ม **ส่งอีเมลทดสอบ** (`sendTestAlertEmail()`)
 
 ### 8.4 งานที่ค้าง/ต้องทำต่อพรุ่งนี้ (เรียงตามลำดับ) ★★★
-- [ ] **① Re-Deploy GAS เวอร์ชันล่าสุด (สำคัญมาก ยังไม่ยืนยันว่า user ทำแล้ว):**
-  - เปิด Google Sheet → Extensions > Apps Script → ลบโค้ดเก่า → วาง `APPS_SCRIPT_code_ready_to_paste.js` (ปัจจุบัน **387 บรรทัด**) ทั้งหมด → Save
+- [ ] **① Re-Deploy GAS เวอร์ชันล่าสุด (สำคัญ — GAS ที่ deploy อยู่ตอนนี้ยังเป็น v0.7.19 ที่อีเมลยังพัง!):**
+  - เปิด Google Sheet → Extensions > Apps Script → ลบโค้ดเก่า → วาง `APPS_SCRIPT_code_ready_to_paste.js` (ปัจจุบัน **449 บรรทัด**) ทั้งหมด → Save
   - Deploy > **Manage deployments > แก้ deployment เดิม > Version = New version** (เพื่อให้ URL เดิมใช้งานได้ ไม่ต้องเปลี่ยนในระบบ!) → ตั้ง "Execute as Me" + "Anyone" → Deploy
-  - ไฟล์นี้ประกอบด้วย: SEND_EMAIL array (v0.7.17) + migrateDepartureTab/ชื่อ tab ใหม่ (v0.7.14) + doGet READ_ALL ทั้งหมด
+  - ไฟล์นี้ประกอบด้วย: **`toList.join(', ')` (v0.7.20 แก้ bug array)** + migrateDepartureTab/ชื่อ tab ใหม่ (v0.7.14) + doGet READ_ALL ทั้งหมด
   - ⚠️ ถ้า URL เปลี่ยน (สร้าง deployment ใหม่แทนการแก้เก่า) → ต้องแก้ `DEFAULT_WEBAPP_URL` ใน js/googleSheetService.js + bump version + push ใหม่
-- [ ] **② ทดสอบ Email จริง (เป้าหมายหลักพรุ่งนี้):**
+- [ ] **② ทดสอบ Email จริง (เป้าหมายหลัก):**
   1. เปิด `https://book-pon.github.io/pea-smart-vehicle/` กด **Ctrl+F5** (ล้างแคช)
-  2. ปุ่ม **Google Sheet** (มุมขวาบน แสดง label คงที่แล้ว v0.7.18) → หัวข้อ **4**
-  3. กรอก `pon60562@gmail.com` ทั้ง 2 ช่อง (หัวหน้า + ช่าง) → **บันทึกอีเมล** → **ส่งอีเมลทดสอบ**
-  4. เช็ค Gmail → ต้องเข้า **กล่องข้อความหลัก (Primary)** ครับ
-  5. ถ้าเข้า tab อื่น → ทำให้ "สะอาด" ขึ้น (ลด HTML/ใส่ text/plain) เพื่อดันไป Primary
-- [ ] **③ ทดสอบเงื่อนไขจริง:** เพิ่ม/แก้รถข้อมูลให้ `mileage - lastPmMileage ≥ 10,000` หรือ `taxExpiry ≤ 7 วัน` → บันทึกขากลับ หรือรีเฟรชหน้า (Fleet scan ตอนเปิด) → ตรวจอีเมลเข้า
-- [ ] **④ Priority 2 (ยังค้าง):** ~~Import ข้ามเครื่องสำหรับ employees / inspections / departures ให้ครบ~~ → **v0.7.19 ทำแล้ว:** import พนักงาน + ประวัติซ่อมครบ (ใน `importFromGoogleSheet`) ยังเหลือแสดงผลซ่อม/พนักงานจากชีตใน UI เพิ่มเติมได้
-- [ ] **⑤ (ถ้ามีเวลานาน) PM_DUE UI:** ปุ่มรีเซ็ตรอบ PM (`lastPmMileage = mileage`), badge "ต้องเข้าเช็ค", NaN guard
+  2. ปุ่ม **Google Sheet** (มุมขวาบน) → หัวข้อ **4** → กรอก `pon60562@gmail.com` ทั้ง 2 ช่อง (หัวหน้า + ช่าง) → **บันทึกอีเมล** → **ส่งอีเมลทดสอบ**
+  3. เช็ค Gmail → "ส่งอีเมลทดสอบ" ต้องเข้า **Primary** 1 ฉบับจริง (ก่อนนี้ v0.7.17-19 ไม่เคยส่งสำเร็จ เพราะ bug array)
+  4. ถ้าเข้า tab อื่น → ทำให้ "สะอาด" ขึ้น (ลด HTML/ใส่ text/plain) เพื่อดันไป Primary
+- [ ] **③ ทดสอบเงื่อนไขจริง (รอบละครั้ง):** รีเฟรชหน้า (Fleet scan ตอนเปิด) → ควรได้ **2 ฉบับแยก** (PM: หัวหน้า+ช่าง / ภาษี: หัวหน้า) สำหรับ 3 คันจริง (กพ-4501, 2ขข-1102, 82-8820); รีเฟรชซ้ำหลายๆ ครั้ง → **ต้องไม่ส่งซ้ำ**; กด "เคลียร์ PM แล้ว" ที่ กพ-4501/2ขข-1102 → บันทึก/รีเฟรช → ไม่มี PM ซ้ำจนกว่าจะครบรอบ 10,000 กม. ใหม่
+- [ ] **④ (ถ้าไม่สะดวกเทสต์อีเมลจริง) ตัวเลือก:** เปิด modal แล้วตรวจ log console (F12) — ค่าล็อก cycle ควรถูกตั้งครั้งเดียวแล้วคงอยู่
+- [ ] **⑤ Priority 2 (ยังค้าง):** ~~Import ข้ามเครื่องสำหรับ employees / inspections / departures ให้ครบ~~ → **v0.7.19 ทำแล้ว:** import พนักงาน + ประวัติซ่อมครบ (ใน `importFromGoogleSheet`) ยังเหลือแสดงผลซ่อม/พนักงานจากชีตใน UI เพิ่มเติมได้
+- [ ] **⑥ (ความสวยงาม UI) PM_DUE:** ใช้ปุ่ม "เคลียร์ PM แล้ว" (ทำแล้ว v0.7.21) + NaN guard ให้ผู้ใช้ที่ข้อมูล `lastPmMileage` ยังเป็น undefined
 
 ### 8.5 วิธี Deploy/อัปเดตเวอร์ชัน → GitHub Pages (ขั้นตอนบังคับเมื่อแก้โค้ด)
-1. Bump version: แทนที่ `v0.7.18` → `v0.7.19` ในไฟล์: `js/googleSheetService.js`, `js/db.js`, `js/app.js`, `js/reportGenerator.js`, `js/server.js`, `css/main.css`, `index.html`, `เปิดใช้งานระบบ.bat`, `เปิดใช้โหมด LAN.bat` (เฉพาะไฟล์ที่เจอคำว่า v0.7.18)
-2. ตรวจ syntax: `node --check js/*.js` (ผ่านหมด = OK)
+1. Bump version: แทนที่เวอร์ชันเดิม เช่น `v0.7.20` → `v0.7.21` ในไฟล์: `js/googleSheetService.js`, `js/db.js`, `js/app.js`, `js/reportGenerator.js`, `js/server.js`, `index.html`, `เปิดใช้งานระบบ.bat`, `เปิดใช้โหมด LAN.bat` (`css/main.css` ไม่มีคำว่าเวอร์ชัน — ข้ามได้) (เฉพาะไฟล์ที่เจอคำว่าเวอร์ชันเดิม)
+2. ตรวจ syntax: `node --check` ครบทุกไฟล์ JS (ผ่านหมด = OK) — รวม `APPS_SCRIPT_code_ready_to_paste.js` ถ้า regenerate แล้ว
 3. ถ้าแก้ template GAS ใน googleSheetService.js → รัน `node extract_apps_script.js` เพื่อสร้าง `APPS_SCRIPT_code_ready_to_paste.js` ใหม่
 4. `git add -A` → commit (ตั้ง user.name/user.email = BooK-PON) → `git push origin master` (branch = master!)
-5. รอ GitHub Pages build ~60-90 วิ แล้วเช็ค `https://book-pon.github.io/pea-smart-vehicle/js/app.js?v=v0.7.19`
+5. รอ GitHub Pages build ~60-90 วิ แล้วเช็ค `https://book-pon.github.io/pea-smart-vehicle/js/app.js?v=v0.7.21`
 6. เตือนผู้ใช้ **Ctrl+F5**
+7. ถ้ามีการส่งอีเมลจริงโดยใช้ GAS → เตือนผู้ใช้ **Re-deploy GAS** (จัดการ deployment เดิมแบบ New version) ด้วย `APPS_SCRIPT_code_ready_to_paste.js` ใหม่ — โค้ดเก่าที่ deploy อยู่บนเซิร์ฟเวอร์จะถูกใช้จนกว่าจะ deploy ใหม่
 
 ### 8.6 เครื่องมือ/ไฟล์สำคัญ
-- `js/googleSheetService.js` — template GAS (`PEA_GOOGLE_APPS_SCRIPT_CODE`) + readSnapshot/readSnapshotWithRetry + SEND_EMAIL + DEFAULT_WEBAPP_URL
-- `js/db.js` — queue/sync + `getAlertRecipients()` + role email keys
-- `js/app.js` — `checkFleetAlerts()`, `checkMaintenanceAlerts()`, `_buildVehicleAlerts()`, `_sendAlertEmail()`, `_composeAlertEmail()`, `sendTestAlertEmail()`, `openGoogleSheetModal()` (หัวข้อ 4)
-- `APPS_SCRIPT_code_ready_to_paste.js` — **ไฟล์ GAS ฉบับวางจริง 387 บรรทัด (v0.7.17)**
+- `js/googleSheetService.js` — template GAS (`PEA_GOOGLE_APPS_SCRIPT_CODE`) + readSnapshot/readSnapshotWithRetry + SEND_EMAIL (`to` = string คั่น `,`) + DEFAULT_WEBAPP_URL
+- `js/db.js` — queue/sync + `getAlertRecipients()`, `getPmRecipients()`, `getTaxRecipients()`, `getAlertRecipientsForRoles()` (fallback key `pea_alert_emails`)
+- `js/app.js` — `checkFleetAlerts()` (2 ฉบับแยก), `checkMaintenanceAlerts()`, `_buildVehicleAlerts()`, `_sendAlertEmail()`, `_composeAlertEmail()`, `_markPmCycleAlerted()`, `_markTaxCycleAlerted()`, `markPmDone()` (ปุ่มเคลียร์ PM), `sendTestAlertEmail()`, `openGoogleSheetModal()` (หัวข้อ 4)
+- `APPS_SCRIPT_code_ready_to_paste.js` — **ไฟล์ GAS ฉบับวางจริง 449 บรรทัด (v0.7.21 comment, โค้ด = v0.7.20 join fix)**
 - `test_gsheet.mjs` — `node test_gsheet.mjs "URL"` (เทสต์ 4 ขั้นจาก Node ต่อ URL จริง, ใช้ได้ทั้งอ่าน/ส่ง/อีเมล)
 - `extract_apps_script.js` — สกัด template → เขียนไฟล์วางใหม่
 - `.gitignore` — ยกเว้น backup (`js/*_backup_working_*.js`), server.js, *.bat, test/script ฯลฯ ไม่ขึ้น Pages
