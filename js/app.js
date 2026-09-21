@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.26
+ * Build Version: v0.7.27
  */
 
 class PEASmartVehicleApp {
@@ -906,8 +906,9 @@ const mileage = endMileage;
                 fuelRefill: fuelRefill,
                 status: overallStatus,
                 defects: failedItems.map(f => `${f.name}${f.critical ? ' [วิกฤต]' : ''}: ${f.description || 'พบอาการชำรุด'}`).join('; '),
-                ticketId: newTicket ? newTicket.ticketId : '-',
-                mileageAlert: mileageDelta > 10000 ? 'เกิน 10,000 กม. (เฝ้าระวัง)' : 'ปกติ'
+ticketId: newTicket ? newTicket.ticketId : '-',
+                mileageAlert: mileageDelta > 10000 ? 'เกิน 10,000 กม. (เฝ้าระวัง)' : 'ปกติ',
+                completeDeparture: !!existingMission
             }).then(res => {
                 if (res && res.success) {
                     console.log('[GoogleSheet] Inspection synchronized successfully');
@@ -3622,27 +3623,15 @@ if (isNaN(startMileage) || startMileage < 0) {
             statusResult: 'READY'
         });
 
-        // Google Sheets Integration Sync
+// Google Sheets Integration Sync — บันทึกเลขไมล์ขากลับในสมุด "บันทึกการเข้า-ออกรถยนต์"
+        // โดยตรง (DEPARTURE_END) ไม่สร้างแถวปลอมในสมุดตรวจสภาพอีกต่อไป (แยกสมุดตามที่ร้องขอ)
         if (typeof googleSheet !== 'undefined') {
-            googleSheet.logInspection({
+            googleSheet.logDepartureEnd({
                 missionId: mission.id,
                 vehicleId: mission.vehicleId,
                 plate: mission.plate,
-                model: mission.model,
-                department: vehicle ? vehicle.department : 'กฟภ.',
-                driver: mission.operatorName,
-                employeeId: mission.employeeId,
-                taskDescription: mission.taskDescription,
-                startMileage: startMileage,
                 endMileage: endMileage,
-                mileageDelta: mileageDelta,
-                mileage: endMileage,
-                fuelLevel: fuelLevel,
-                fuelRefill: fuelRefill,
-                status: 'READY',
-                defects: 'ตรวจรับขากลับปกติ (ทางลัดบันทึกเลขไมล์)',
-                ticketId: '-',
-                mileageAlert: mileageDelta > 10000 ? 'เกิน 10,000 กม. (เฝ้าระวัง)' : 'ปกติ'
+                mileageDelta: mileageDelta
             }).catch(e => console.warn('[GoogleSheet] Return mileage sync warning:', e));
         }
 

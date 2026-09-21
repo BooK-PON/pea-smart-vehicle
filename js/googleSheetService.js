@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.26
+ * Build Version: v0.7.27
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -547,7 +547,7 @@ class PEAGoogleSheetService {
         }
     }
 
-    // 1. บันทึกผลการตรวจสภาพ (หรือบันทึกขากลับ)
+// 1. บันทึกผลการตรวจสภาพ (ตรวจสภาพเต็มรูปแบบ — เขียนลงสมุดตรวจสภาพเท่านั้น)
     async logInspection(inspectionData) {
         return this.sendToGoogleSheet('INSPECTION', inspectionData);
     }
@@ -555,6 +555,11 @@ class PEAGoogleSheetService {
     // 1.5 บันทึกรถออกปฏิบัติงาน (ขาไป)
     async logDeparture(departureData) {
         return this.sendToGoogleSheet('DEPARTURE', departureData);
+    }
+
+    // 1.6 บันทึกเลขไมล์ขากลับ (ปิดภารกิจในสมุด บันทึกการเข้า-ออกรถยนต์ — ไม่สร้างแถวสมุดตรวจสภาพ)
+    async logDepartureEnd(departureEndData) {
+        return this.sendToGoogleSheet('DEPARTURE_END', departureEndData);
     }
 
     // 2. บันทึก/อัปเดตข้อมูลรถ
