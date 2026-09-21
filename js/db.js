@@ -1,10 +1,10 @@
 ﻿/**
  * PEA Smart Vehicle Database & Smart Sync Engine
  * LocalStorage Fallback, Offline Queue (pea_offline_sync_queue) & Cloudflare D1 (SQLite) RESTful API Connector
- * Build Version: v0.7.25 (Cache Busting)
+ * Build Version: v0.7.26 (Cache Busting)
  */
 
-const APP_BUILD_VERSION = 'v0.7.25';
+const APP_BUILD_VERSION = 'v0.7.26';
 
 class PEADatabase {
     constructor() {
@@ -284,7 +284,9 @@ class PEADatabase {
     // =========================================================================
     getEmployees() {
         try {
-            return JSON.parse(localStorage.getItem(this.STORAGE_KEYS.EMPLOYEES)) || [];
+            const raw = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.EMPLOYEES)) || [];
+            // กรองแถวตั้งค่าระบบ (SYS_ALERT_* ที่ใช้แชร์อีเมลผู้รับข้ามเครื่อง) ออกจากรายการพนักงานจริง
+            return raw.filter(e => !(e && e.id && String(e.id).indexOf('SYS_ALERT_') === 0));
         } catch(e) {
             return [];
         }

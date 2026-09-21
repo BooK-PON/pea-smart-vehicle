@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.25
+ * Build Version: v0.7.26
  */
 
 class PEASmartVehicleApp {
@@ -2498,7 +2498,26 @@ exportGoogleSheetCSV() {
 
             // นำเข้าพนักงานจากชีต (เพิ่มคนที่เครื่องยังไม่มี ไม่ลบทับคนที่แก้ไขในเครื่อง)
             let empImported = 0;
-            const mergedEmployees = googleSheet.mergeEmployeesFromSnapshot(realRemoteEmployees, localEmployees);
+            let configAppliedChief = '', configAppliedMech = '';
+            // แถว config ยอด 'SYS_ALERT_*' เป็นอีเมลผู้รับที่เครื่องอื่นแชร์ไว้ ->
+            // นำมาใช้กับเครื่องนี้ถ้ายังไม่ได้ตั้งค่า (ตั้งแค่เครื่องเดียว ทุกเครื่องซิงก์ตามได้)
+            try {
+                (realRemoteEmployees || []).forEach(row => {
+                    if (!row || !row.id) return;
+                    const cfgId = String(row.id);
+                    if (cfgId.indexOf('SYS_ALERT_') !== 0) return;
+                    const email = String(row.name || row.dept || (row.jsonFull && row.jsonFull.email) || '').trim();
+                    if (!email) return;
+                    if (cfgId === 'SYS_ALERT_CHIEF' && !db.getChiefEmail()) { db.setChiefEmail(email); configAppliedChief = email; }
+                    if (cfgId === 'SYS_ALERT_MECHANIC' && !db.getMechanicEmail()) { db.setMechanicEmail(email); configAppliedMech = email; }
+                });
+                if (configAppliedChief || configAppliedMech) {
+                    console.log('[PEA] กู้คืนอีเมลผู้รับจากชีต (หัวหน้า: ' + (configAppliedChief || '-') + ', ช่าง: ' + (configAppliedMech || '-') + ')');
+                }
+            } catch(e) { console.warn('[PEA] Apply shared alert emails error:', e); }
+            // แยกแถว config ออกจากรายการพนักงานจริง (ไม่ให้รกตาราง + ไม่นับเป็นพนักงาน)
+            const realEmployeeList = (realRemoteEmployees || []).filter(e => !(e && e.id && String(e.id).indexOf('SYS_ALERT_') === 0));
+            const mergedEmployees = googleSheet.mergeEmployeesFromSnapshot(realEmployeeList, localEmployees);
             if (mergedEmployees && mergedEmployees.length > 0) {
                 const beforeEmp = db.getEmployees().length;
                 const savedEmp = db.replaceEmployeesFromRemote(mergedEmployees);
@@ -2732,6 +2751,19 @@ exportGoogleSheetCSV() {
                         }
                     }
                 } catch (sqe) { console.warn('[PEA Auto-sync] flush queue error:', sqe); }
+
+                // ลองสแกนแจ้งเตือนอีเมล (PM 1 หมื่น กม. / ภาษี) ทุก ~2 นาที —
+                // ไม่ใช่แค่ตอนเปิดแอปครั้งแรก เพราะรอบแรกอาจ offline/ยังตั้งเมลไม่ครบ
+                // lock รอบไซเคิลป้องกันการยิงซ้ำอยู่แล้ว
+                try {
+                    if (db.isOnline()) {
+                        const now2 = Date.now();
+                        if (!this._lastFleetScanTs || (now2 - this._lastFleetScanTs) >= 120000) {
+                            this._lastFleetScanTs = now2;
+                            this.checkFleetAlerts();
+                        }
+                    }
+                } catch (fs) { console.warn('[PEA Auto-sync] fleet alert scan error:', fs); }
             } catch (e) {
                 console.warn('[PEA Auto-sync] error:', e);
             } finally {
@@ -3788,6 +3820,25 @@ saveAlertEmails() {
         db.setMechanicEmail(mechanic);
         const summary = `หัวหน้างาน: ${chief || '—'}`;
         notifier.showToast('บันทึกอีเมลสำเร็จ', `${summary} / ช่างเครื่องยนต์: ${mechanic || '—'}`, 'SUCCESS');
+
+        // แชร์การตั้งค่าอีเมลขึ้น Google Sheets (ผ่านแอคชัน EMPLOYEE ที่ deploy อยู่แล้ว)
+        // ใช้รหัสสำรอง SYS_ALERT_* — อีกเครื่องจะดึงค่ากลับมาใช้ตอน auto-sync (ไม่มี GAS redeploy)
+        if (typeof googleSheet !== 'undefined' && googleSheet.isConnected()) {
+            const stamp = new Date().toISOString();
+            const pushCfg = (id, email, role) => {
+                if (!email) return;
+                googleSheet.sendToGoogleSheet('EMPLOYEE', {
+                    id: id, email: email, role: role, name: email,
+                    position: '[ตั้งค่าอีเมล] ' + (role === 'CHIEF' ? 'หัวหน้างาน' : 'ช่างเครื่องยนต์'),
+                    dept: 'การไฟฟ้าส่วนภูมิภาค (ตั้งค่าอัตโนมัติ)', updatedAt: stamp
+                }).then(r => {
+                    if (r && r.success) console.log('[Email Alert] แชร์อีเมล ' + role + ' ขึ้นชีตแล้ว: ' + email);
+                    else console.warn('[Email Alert] แชร์อีเมล ' + role + ' ขึ้นชีตไม่สำเร็จ:', r);
+                }).catch(e => console.warn('[Email Alert] แชร์อีเมล error:', e));
+            };
+            pushCfg('SYS_ALERT_CHIEF', chief, 'CHIEF');
+            pushCfg('SYS_ALERT_MECHANIC', mechanic, 'MECHANIC');
+        }
     }
 
     // ฟังก์ชันส่งอีเมลทดสอบ (เพื่อตรวจว่าปลอดภัยและเข้า Gmail กล่องข้อความหลัก)
@@ -3925,15 +3976,28 @@ saveAlertEmails() {
     }
 
     _sendAlertEmail(subject, body, recipients, cycleClaims) {
-        if (typeof googleSheet === 'undefined' || typeof db === 'undefined') return;
+        if (typeof googleSheet === 'undefined' || typeof db === 'undefined') {
+            console.warn('[Email Alert] ข้ามการส่ง เพราะโมดูล googleSheet/db ยังไม่พร้อม:', subject);
+            return;
+        }
         const list = recipients && recipients.length > 0 ? recipients : db.getAlertRecipients();
-        if (list.length === 0) return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
+        if (list.length === 0) {
+            // สาเหตุ #1 ที่พบบ่อย: อีเมลผู้รับ (หัวหน้า/ช่าง) ยังไม่ได้ตั้งค่าในเครื่องนี้
+            console.warn('[Email Alert] ไม่ส่งเมล — ยังไม่ได้ตั้งอีเมลผู้รับ (หัวหน้า/ช่าง) บนเครื่องนี้: "' + subject + '"');
+            const nowTs = Date.now();
+            if (!this._lastNoRecipientsToast || (nowTs - this._lastNoRecipientsToast) > 300000) {
+                this._lastNoRecipientsToast = nowTs;
+                notifier.showToast('พบรถถึงเกณฑ์แต่ยังไม่ได้ตั้งอีเมลผู้รับ', 'กรุณาไปที่ปุ่ม Google Sheet → ตั้งอีเมลหัวหน้า+ช่าง แล้วกด "บันทึกอีเมล" (ตั้งแค่เครื่องเดียว อีกเครื่องซิงก์ตามได้)', 'WARNING');
+            }
+            return; // หากยังไม่ตั้งอีเมล จะไม่ส่ง
+        }
 
         // "อ้างสิทธิ์" (claim) วงรอบก่อนส่งจริง — กัน race condition เมื่อเปิด 2 แท็บพร้อมกัน
         // TS: เขียน lock ก่อน แล้วค่อยส่ง; ถ้าส่งไม่สำเร็จจึงยกเลิก เพื่อไม่ให้อีเมลซ้ำจากอีกแท็บ
         const claims = Array.isArray(cycleClaims) ? cycleClaims : [];
         claims.forEach(c => { if (c && c.key) localStorage.setItem(c.key, String(c.value)); });
 
+        console.log('[Email Alert] กำลังส่ง: "' + subject + '" → ' + list.join(', '));
         googleSheet.sendEmailAlert(list, subject, body).then(res => {
             if (res && res.success) {
                 console.log(`[Email Alert] Sent to ${list.join(', ')}`);
