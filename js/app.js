@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle Inspection & Fleet Management System
  * Main Application Logic & Controller
- * Build Version: v0.7.28
+ * Build Version: v0.7.29
  */
 
 class PEASmartVehicleApp {
@@ -2213,6 +2213,47 @@ const diff = this._taxDaysLeft(v) === null ? 999 : this._taxDaysLeft(v);
 
     // =========================================================================
     // Google Sheets Integration Modal & Actions (ฐานข้อมูล Google Sheets)
+// รุ่น GAS template ที่แอปนี้ต้องการให้เชื่อมต่อ (ต้องปั่นตรงกับ APPS_SCRIPT_code_ready_to_paste.js)
+    GAS_BUILD_TARGET = 'GAS-v0.7.29';
+
+    renderGasBuildStatus() {
+        const el = document.getElementById('gas-build-status');
+        const b = (typeof window !== 'undefined') ? window.__peaGasBuild : null;
+        if (!el) return;
+        if (!b) {
+            el.innerHTML = 'รุ่น GAS ที่เชื่อมต่อ: <span class="font-mono">ยังไม่ได้รับข้อมูล (ส่งข้อมูลสักรายการ แล้วกด "ตรวจรุ่น GAS")</span>';
+            return;
+        }
+        if (String(b) === this.GAS_BUILD_TARGET) {
+            el.innerHTML = `รุ่น GAS ที่เชื่อมต่อ: <span class="font-mono font-bold text-emerald-400">${b}</span> <span class="text-emerald-400">✓ ตรงกับแอป</span>`;
+        } else {
+            el.innerHTML = `รุ่น GAS ที่เชื่อมต่อ: <span class="font-mono font-bold text-red-400">${b}</span> <span class="text-red-400 font-bold">✗ GAS ยังไม่ถูก Redeploy เป็นรุ่นล่าสุด (${this.GAS_BUILD_TARGET}) — กรุณาวางโค้ด GAS ทั้งไฟล์แล้ว Deploy ใหม่ ไม่เช่นนั้นการตรวจสภาพ/ขากลับอาจเขียนไปผิดสมุด</span>`;
+        }
+    }
+
+    checkGasBuildVersion() {
+        if (typeof googleSheet === 'undefined') return;
+        const el = document.getElementById('gas-build-status');
+        if (el) el.innerHTML = 'รุ่น GAS: กำลังตรวจสอบ…';
+        googleSheet.pingGasBuild().then(r => {
+            if (r && r.success && r.gasBuild) {
+                window.__peaGasBuild = r.gasBuild;
+                this.renderGasBuildStatus();
+                if (String(r.gasBuild) !== this.GAS_BUILD_TARGET) {
+                    notifier.showToast('GAS ยังเป็นรุ่นเก่า', `พบรุ่น ${r.gasBuild} แต่แอปต้องการ ${this.GAS_BUILD_TARGET} — ต้อง Redeploy ก่อน ระบบจึงแยกสมุดได้ถูกต้อง`, 'WARNING');
+                } else {
+                    notifier.showToast('GAS ตรงรุ่นแล้ว', 'เชื่อมต่อกับ GAS รุ่นล่าสุด ' + r.gasBuild + ' เรียบร้อย', 'SUCCESS');
+                }
+            } else {
+                if (el) el.innerHTML = 'รุ่น GAS: ตรวจไม่ได้ (เชื่อมต่อไม่สำเร็จ หรือ URL ไม่ถูกต้อง)';
+                notifier.showToast('ตรวจ GAS ไม่สำเร็จ', 'ตรวจสอบ URL / สถานะอินเทอร์เน็ตอีกครั้ง', 'ERROR');
+            }
+        }).catch(e => {
+            if (el) el.innerHTML = 'รุ่น GAS: ตรวจไม่ได้ (' + (e && e.message ? e.message : 'error') + ')';
+            notifier.showToast('ตรวจ GAS ขัดข้อง', String(e && e.message || e), 'ERROR');
+        });
+    }
+
     // =========================================================================
     openGoogleSheetModal() {
         const modal = document.getElementById('pea-googlesheet-modal');
@@ -2269,8 +2310,14 @@ const diff = this._taxDaysLeft(v) === null ? 999 : this._taxDaysLeft(v);
                                     <i class="fa-solid fa-bolt"></i> ทดสอบส่งข้อมูลทดสอบ
                                 </button>
                             </div>
-                            <div class="text-[10px] text-slate-500 leading-relaxed">
+<div class="text-[10px] text-slate-500 leading-relaxed">
                                 * ปุ่มโหลดจะอ่านรถทั้งหมดจาก Google Sheet มาเก็บไว้ในเครื่อง (ตัดสินข้อมูลด้วย updatedAt ล่าสุด เพื่อไม่ให้ข้อมูลถอยหลัง) — ระบบยังเปิดหน้าต่างนี้แล้วโหลดอัตโนมัติวันละครั้งอีกด้วย
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 border-t border-slate-800/60 pt-2 text-[11px]">
+                                <span id="gas-build-status" class="text-slate-400">รุ่น GAS ที่เชื่อมต่อ: ยังไม่ได้รับข้อมูล (ส่งข้อมูลสักรายการ แล้วกด "ตรวจรุ่น GAS")</span>
+                                <button onclick="app.checkGasBuildVersion()" class="text-amber-300 hover:text-amber-200 underline font-semibold flex items-center gap-1">
+                                    <i class="fa-solid fa-code-branch"></i> ตรวจรุ่น GAS
+                                </button>
                             </div>
                         </div>
 
@@ -2836,12 +2883,15 @@ exportGoogleSheetCSV() {
             });
         }
 
-        // Network change events
+// Network change events
         window.addEventListener('pea-network-changed', () => {
             this.updateNetworkUI();
         });
         window.addEventListener('pea-sync-queue-updated', () => {
             this.updateNetworkUI();
+        });
+        window.addEventListener('pea-gasescript-build-changed', () => {
+            this.renderGasBuildStatus();
         });
         window.addEventListener('online', () => {
             this.updateNetworkUI();

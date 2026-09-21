@@ -1,7 +1,7 @@
 ﻿/**
  * PEA Smart Vehicle - Google Sheets Database Service
  * ระบบเชื่อมต่อและบันทึกข้อมูลเข้า Google Sheets อัตโนมัติผ่าน Google Apps Script Web App
- * Build Version: v0.7.28
+ * Build Version: v0.7.29
  */
 
 // โค้ด Google Apps Script สำเร็จรูป สำหรับนำไปวางใน Extensions > Apps Script ของ Google Sheet
@@ -463,8 +463,27 @@ class PEAGoogleSheetService {
         this.webAppUrl = localStorage.getItem(this.STORAGE_KEY_URL) || this.DEFAULT_WEBAPP_URL;
     }
 
-    getWebAppUrl() {
+getWebAppUrl() {
         return this.webAppUrl;
+    }
+
+    // ตรวจรุ่นของ Google Apps Script ที่ถูก Redeploy (GET ขึ้นไป ไม่เขียนชีต)
+    // ใช้เทียบกับรุ่น template ปัจจุบัน เพื่อเตือนว่ายังไม่ได้ Redeploy GAS (ต้นตอที่พบบ่อยของข้อมูลไม่ขึ้นชีต)
+    async pingGasBuild() {
+        if (!this.isConnected()) return { success: false, reason: 'NO_URL' };
+        try {
+            const res = await fetch(this.webAppUrl + '?action=CHECK', { method: 'GET', mode: 'cors', redirect: 'follow' });
+            if (!res.ok) return { success: false, reason: 'HTTP_' + res.status };
+            let data = null;
+            try { data = await res.json(); } catch(e) { data = null; }
+            if (data && data.gasBuild) {
+                window.__peaGasBuild = data.gasBuild;
+                window.dispatchEvent(new CustomEvent('pea-gasescript-build-changed'));
+            }
+            return { success: !!data, gasBuild: data ? data.gasBuild : null, data: data };
+        } catch (e) {
+            return { success: false, error: e && e.message ? e.message : String(e) };
+        }
     }
 
     setWebAppUrl(url) {
@@ -516,6 +535,11 @@ class PEAGoogleSheetService {
                 let data = null;
                 try { data = JSON.parse(raw); } catch(e) { data = null; }
                 if (data && data.success !== false) {
+                    // เก็บรุ่นของ GAS build ที่กำลังเชื่อมต่อ (ใช้แสดงเตือนว่ายังไม่ Redeploy)
+                    if (data.gasBuild) {
+                        window.__peaGasBuild = data.gasBuild;
+                        window.dispatchEvent(new CustomEvent('pea-gasescript-build-changed'));
+                    }
                     console.log(`[Google Sheets] บันทึกข้อมูลสำเร็จ -> ${action}`);
                     return { success: true, data };
                 }
